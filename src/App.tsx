@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Shield, Target, Trophy, Users } from "lucide-react";
-import { fallbackGames, findTeam, Game, positions, teams } from "./data";
+import { fallbackGames, findTeam, Game, hallOfFameGame, positions, scheduleSlots, ScheduleSlot, teams } from "./data";
 
 type Language = "es" | "en";
 type View = "home" | "standings" | "predictions" | "dashboard" | "clusters" | "plays" | "positions";
@@ -42,10 +42,11 @@ function loadPredictions(): Prediction[] {
 }
 
 // The ESPN adapter keeps data-source details outside presentation components.
-async function loadWeekGames(): Promise<Game[]> {
+async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
   try {
-    const response = await fetch("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=1&dates=2026");
-    if (!response.ok) return fallbackGames;
+    const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${slot.seasonType}&week=${slot.espnWeek}&dates=2026`);
+    const fallback = slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : [];
+    if (!response.ok) return fallback;
     const payload = await response.json();
     const mapped = (payload.events || []).map((event: any): Game | null => {
       const competition = event.competitions?.[0];
@@ -55,16 +56,18 @@ async function loadWeekGames(): Promise<Game[]> {
       const awayTeam = teams.find((team) => team.abbr === away?.team?.abbreviation);
       if (!homeTeam || !awayTeam) return null;
       const state = event.status?.type?.state;
-      return { id: String(event.id), week: 1, kickoffUtc: event.date, away: awayTeam.id, home: homeTeam.id, venue: competition?.venue?.fullName || "TBD", status: state === "post" ? "final" : state === "in" ? "live" : "scheduled", awayScore: Number(away.score || 0), homeScore: Number(home.score || 0) };
+      return { id: String(event.id), week: slot.displayWeek, kickoffUtc: event.date, away: awayTeam.id, home: homeTeam.id, venue: competition?.venue?.fullName || "TBD", status: state === "post" ? "final" : state === "in" ? "live" : "scheduled", awayScore: Number(away.score || 0), homeScore: Number(home.score || 0) };
     }).filter(Boolean);
-    return mapped.length ? mapped : fallbackGames;
-  } catch { return fallbackGames; }
+    return mapped.length ? mapped : fallback;
+  } catch { return slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : []; }
 }
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem("nfl-language") as Language) || "es");
   const [view, setView] = useState<View>("home");
-  const [games, setGames] = useState<Game[]>(fallbackGames);
+  const [selectedSlotId, setSelectedSlotId] = useState("hof");
+  const [games, setGames] = useState<Game[]>(hallOfFameGame);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [predictions, setPredictions] = useState<Prediction[]>(loadPredictions);
   const [message, setMessage] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
@@ -72,7 +75,14 @@ export default function App() {
   const [gameFilter, setGameFilter] = useState("");
   const t = copy[language];
 
-  useEffect(() => { loadWeekGames().then(setGames); }, []);
+  const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
+
+  useEffect(() => {
+    let active = true;
+    setScheduleLoading(true);
+    loadWeekGames(selectedSlot).then((loadedGames) => { if (active) { setGames(loadedGames); setScheduleLoading(false); } });
+    return () => { active = false; };
+  }, [selectedSlotId]);
   useEffect(() => { localStorage.setItem("nfl-language", language); document.documentElement.lang = language; }, [language]);
   useEffect(() => { localStorage.setItem("nfl-2026-predictions", JSON.stringify(predictions)); }, [predictions]);
 
@@ -119,9 +129,25 @@ export default function App() {
 
   function PageHeading({ title, subtitle }: { title: string; subtitle: string }) { return <div className="page-heading"><p className="eyebrow">NFL TRACKER 2026</p><h1>{title}</h1><p>{subtitle}</p></div>; }
   function TeamBadge({ id }: { id: string }) { const team = findTeam(id); return <span className="team-badge" style={{ "--team": team.color } as React.CSSProperties}>{team.abbr}</span>; }
-  function GameCard({ game, compact = false }: { game: Game; compact?: boolean }) { const away = findTeam(game.away); const home = findTeam(game.home); return <article className={`game-card ${compact ? "compact" : ""}`}><div className="game-meta"><span>WEEK {game.week}</span><span>{formatKickoff(game.kickoffUtc)}</span></div><div className="matchup"><div><TeamBadge id={away.id} /><strong>{away.city}</strong><small>{away.name}</small></div><span className="versus">VS</span><div><TeamBadge id={home.id} /><strong>{home.city}</strong><small>{home.name} · HOME</small></div></div><p className="venue">{game.venue}</p></article>; }
+  function GameCard({ game, compact = false }: { game: Game; compact?: boolean }) { const away = findTeam(game.away); const home = findTeam(game.home); return <article className={`game-card ${compact ? "compact" : ""}`}><div className="game-meta"><span>{language === "es" ? selectedSlot.labelEs : selectedSlot.labelEn}</span><span>{formatKickoff(game.kickoffUtc)}</span></div><div className="matchup"><div><TeamBadge id={away.id} /><strong>{away.city}</strong><small>{away.name}</small></div><span className="versus">VS</span><div><TeamBadge id={home.id} /><strong>{home.city}</strong><small>{home.name} · HOME</small></div></div><p className="venue">{game.venue}</p></article>; }
 
-  function Home() { return <div className="page"><PageHeading title={t.title} subtitle={t.subtitle} /><section className="summary-grid"><div><span>{t.nextGames}</span><strong>{games.length}</strong><small>WEEK 1</small></div><div><span>{t.records}</span><strong>{predictions.length}</strong><small>{participants.length} {language === "es" ? "participantes" : "participants"}</small></div><div><span>{t.localTime}</span><strong>{Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop()?.replace("_", " ")}</strong><small>{language === "es" ? "Detectada automáticamente" : "Detected automatically"}</small></div><div><span>{language === "es" ? "Partidos jugados" : "Games played"}</span><strong>0</strong><small>2026 REGULAR SEASON</small></div></section><section><div className="section-title"><h2>{t.nextGames}</h2><button onClick={() => setView("predictions")}>{t.register}</button></div><div className="games-grid">{games.map((game) => <GameCard key={game.id} game={game} />)}</div></section></div>; }
+  function Home() {
+    const slotLabel = language === "es" ? selectedSlot.labelEs : selectedSlot.labelEn;
+    const completedGames = games.filter((game) => game.status === "final").length;
+    return <div className="page">
+      <PageHeading title={`NFL 2026 — ${slotLabel}`} subtitle={t.subtitle} />
+      <section className="schedule-toolbar panel">
+        <label>{language === "es" ? "Etapa y semana" : "Stage and week"}
+          <select value={selectedSlotId} onChange={(event) => setSelectedSlotId(event.target.value)}>
+            {scheduleSlots.map((slot) => <option key={slot.id} value={slot.id}>{language === "es" ? slot.labelEs : slot.labelEn}</option>)}
+          </select>
+        </label>
+        <span>{language === "es" ? "Calendario NFL 2026 completo" : "Complete 2026 NFL schedule"}</span>
+      </section>
+      <section className="summary-grid"><div><span>{t.nextGames}</span><strong>{games.length}</strong><small>{slotLabel}</small></div><div><span>{t.records}</span><strong>{predictions.length}</strong><small>{participants.length} {language === "es" ? "participantes" : "participants"}</small></div><div><span>{t.localTime}</span><strong>{Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop()?.replace("_", " ")}</strong><small>{language === "es" ? "Detectada automáticamente" : "Detected automatically"}</small></div><div><span>{language === "es" ? "Partidos jugados" : "Games played"}</span><strong>{completedGames}</strong><small>{slotLabel}</small></div></section>
+      <section><div className="section-title"><h2>{t.nextGames}</h2><button onClick={() => setView("predictions")}>{t.register}</button></div>{scheduleLoading ? <div className="empty-state"><CalendarDays size={34} /><p>{language === "es" ? "Cargando calendario…" : "Loading schedule…"}</p></div> : games.length ? <div className="games-grid">{games.map((game) => <GameCard key={game.id} game={game} />)}</div> : <div className="empty-state"><CalendarDays size={34} /><p>{language === "es" ? "Los enfrentamientos de esta etapa todavía no han sido publicados." : "Matchups for this stage have not been published yet."}</p></div>}</section>
+    </div>;
+  }
 
   function Standings() { return <div className="page"><PageHeading title={language === "es" ? "CLASIFICACIONES NFL 2026" : "NFL 2026 STANDINGS"} subtitle={language === "es" ? "Pretemporada · Todos los equipos comienzan 0–0" : "Preseason · Every team starts 0–0"} /><div className="conference-columns">{(["AFC", "NFC"] as const).map((conference) => <section key={conference}><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2>{(["East", "North", "South", "West"] as const).map((division) => <div className="division-card" key={division}><div className="division-title"><span>{conference}</span><strong>{division.toUpperCase()}</strong></div><div className="standings-head"><span>{t.team}</span><span>W</span><span>L</span><span>PCT</span><span>PF</span><span>DIFF</span></div>{teams.filter((team) => team.conference === conference && team.division === division).map((team) => <div className="standings-row" key={team.id}><span><TeamBadge id={team.id} /><b>{team.abbr}</b><em>{team.city}</em></span><span>0</span><span>0</span><span>.000</span><span>0</span><span>0</span></div>)}</div>)}</section>)}</div></div>; }
 
