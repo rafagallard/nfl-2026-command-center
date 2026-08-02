@@ -62,10 +62,28 @@ async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
   } catch { return slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : []; }
 }
 
+// Chooses the most relevant schedule view when the application opens.
+function getInitialScheduleSlotId() {
+  const now = Date.now();
+  const boundary = (iso: string) => Date.parse(iso);
+  if (now < boundary("2026-08-10T00:00:00Z")) return "hof";
+  if (now < boundary("2026-08-17T00:00:00Z")) return "pre-1";
+  if (now < boundary("2026-08-24T00:00:00Z")) return "pre-2";
+  if (now < boundary("2026-08-31T00:00:00Z")) return "pre-3";
+  if (now < boundary("2027-01-12T00:00:00Z")) {
+    const regularWeek = Math.min(18, Math.max(1, Math.floor((now - boundary("2026-09-09T00:00:00Z")) / 604800000) + 1));
+    return `reg-${regularWeek}`;
+  }
+  if (now < boundary("2027-01-19T00:00:00Z")) return "post-1";
+  if (now < boundary("2027-01-26T00:00:00Z")) return "post-2";
+  if (now < boundary("2027-02-08T00:00:00Z")) return "post-3";
+  return "post-5";
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem("nfl-language") as Language) || "es");
   const [view, setView] = useState<View>("home");
-  const [selectedSlotId, setSelectedSlotId] = useState("hof");
+  const [selectedSlotId, setSelectedSlotId] = useState(getInitialScheduleSlotId);
   const [games, setGames] = useState<Game[]>(hallOfFameGame);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [predictions, setPredictions] = useState<Prediction[]>(loadPredictions);
