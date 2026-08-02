@@ -23,6 +23,16 @@ export interface Game {
   homeScore?: number;
 }
 
+export interface ScheduleSlot {
+  id: string;
+  phase: "hall-of-fame" | "preseason" | "regular" | "postseason";
+  seasonType: 1 | 2 | 3;
+  espnWeek: number;
+  displayWeek: number;
+  labelEs: string;
+  labelEn: string;
+}
+
 export const teams: Team[] = [
   ["ari", "ARI", "Arizona", "Cardinals", "NFC", "West", "#97233f"],
   ["atl", "ATL", "Atlanta", "Falcons", "NFC", "South", "#a71930"],
@@ -67,11 +77,27 @@ export const teams: Team[] = [
 })) as Team[];
 
 // These published 2026 fixtures keep the interface useful if the live source is temporarily unavailable.
+export const hallOfFameGame: Game[] = [
+  { id: "2026-hof-car-ari", week: 0, kickoffUtc: "2026-08-07T00:00:00Z", away: "car", home: "ari", venue: "Tom Benson Hall of Fame Stadium", status: "scheduled" },
+];
+
 export const fallbackGames: Game[] = [
   { id: "2026-w1-sf-lar", week: 1, kickoffUtc: "2026-09-10T00:35:00Z", away: "sf", home: "lar", venue: "Melbourne Cricket Ground", status: "scheduled" },
   { id: "2026-w1-dal-nyg", week: 1, kickoffUtc: "2026-09-14T00:20:00Z", away: "dal", home: "nyg", venue: "MetLife Stadium", status: "scheduled" },
   { id: "2026-w1-den-kc", week: 1, kickoffUtc: "2026-09-15T00:15:00Z", away: "den", home: "kc", venue: "Arrowhead Stadium", status: "scheduled" },
   { id: "2026-w1-sea-ne", week: 1, kickoffUtc: "2026-09-13T17:00:00Z", away: "sea", home: "ne", venue: "Gillette Stadium", status: "scheduled" },
+];
+
+// ESPN numbers the Hall of Fame game as preseason week 1; the three full
+// preseason rounds therefore map to ESPN weeks 2–4.
+export const scheduleSlots: ScheduleSlot[] = [
+  { id: "hof", phase: "hall-of-fame", seasonType: 1, espnWeek: 1, displayWeek: 0, labelEs: "Hall of Fame", labelEn: "Hall of Fame" },
+  ...[1, 2, 3].map((week) => ({ id: `pre-${week}`, phase: "preseason" as const, seasonType: 1 as const, espnWeek: week + 1, displayWeek: week, labelEs: `Pretemporada · Semana ${week}`, labelEn: `Preseason · Week ${week}` })),
+  ...Array.from({ length: 18 }, (_, index) => { const week = index + 1; return { id: `reg-${week}`, phase: "regular" as const, seasonType: 2 as const, espnWeek: week, displayWeek: week, labelEs: `Temporada regular · Semana ${week}`, labelEn: `Regular season · Week ${week}` }; }),
+  { id: "post-1", phase: "postseason", seasonType: 3, espnWeek: 1, displayWeek: 1, labelEs: "Playoffs · Comodines", labelEn: "Playoffs · Wild Card" },
+  { id: "post-2", phase: "postseason", seasonType: 3, espnWeek: 2, displayWeek: 2, labelEs: "Playoffs · Divisional", labelEn: "Playoffs · Divisional" },
+  { id: "post-3", phase: "postseason", seasonType: 3, espnWeek: 3, displayWeek: 3, labelEs: "Finales de conferencia", labelEn: "Conference Championships" },
+  { id: "post-5", phase: "postseason", seasonType: 3, espnWeek: 5, displayWeek: 5, labelEs: "Super Bowl LXI", labelEn: "Super Bowl LXI" },
 ];
 
 export const positions = [
