@@ -20,7 +20,29 @@ interface Prediction {
   isCorrect?: boolean;
 }
 
-const BACKEND_URL = "https://script.google.com/macros/s/AKfycby0zg27Ts7TvVgl1ZhA1k5NKOg7VgKPsf8q9CKarc82XuzSzSlcNpdj5AoNhTG2dUPAKg/exec";
+interface PlayRecord {
+  playId: string;
+  gameId: string;
+  sequence: number;
+  quarter: number;
+  clock: string;
+  teamId: string;
+  down: number;
+  distance: number;
+  yardLine: string | number;
+  playType: string;
+  descriptionEn: string;
+  descriptionEs: string;
+  yards: number;
+  scoring: boolean;
+  turnover: boolean;
+  conceptEn: string;
+  conceptEs: string;
+  explanationEn: string;
+  explanationEs: string;
+}
+
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxY8aPfp3QaTx21dQtSdqQx-GX6CUNRKjRV1lsA75NPy5hdsqU6oG41mLKbQIVfm01pTw/exec";
 
 const copy = {
   es: {
@@ -110,6 +132,23 @@ async function loadAllGames(): Promise<Game[]> {
   }));
 }
 
+/** Loads a team's available play-by-play history from the shared backend. */
+async function loadTeamPlays(teamId: string): Promise<PlayRecord[]> {
+  const response = await fetch(`${BACKEND_URL}?action=plays&teamId=${encodeURIComponent(teamId)}`);
+  if (!response.ok) throw new Error("play_history_unavailable");
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || "play_history_unavailable");
+  return (payload.plays || []).map((play: any): PlayRecord => ({
+    playId: String(play.play_id), gameId: String(play.game_id), sequence: Number(play.sequence),
+    quarter: Number(play.quarter), clock: play.clock, teamId: play.possession_team_id,
+    down: Number(play.down), distance: Number(play.distance), yardLine: play.yard_line,
+    playType: play.play_type, descriptionEn: play.description_en, descriptionEs: play.description_es,
+    yards: Number(play.yards_gained), scoring: play.scoring_play === true, turnover: play.turnover === true,
+    conceptEn: play.tags?.concept_en || play.play_type, conceptEs: play.tags?.concept_es || play.play_type,
+    explanationEn: play.tags?.explanation_en || "", explanationEs: play.tags?.explanation_es || "",
+  }));
+}
+
 // Chooses the most relevant schedule view when the application opens.
 function getInitialScheduleSlotId() {
   const now = Date.now();
@@ -185,6 +224,11 @@ export default function App() {
   const [teamFilter, setTeamFilter] = useState("");
   const [resultFilter, setResultFilter] = useState("");
   const [standingsPhase, setStandingsPhase] = useState<"preseason" | "regular">("preseason");
+  const [filmTeam, setFilmTeam] = useState("car");
+  const [filmQuarter, setFilmQuarter] = useState("");
+  const [filmType, setFilmType] = useState("");
+  const [filmPlays, setFilmPlays] = useState<PlayRecord[]>([]);
+  const [filmLoading, setFilmLoading] = useState(false);
   const t = copy[language];
 
   const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
@@ -199,6 +243,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem("nfl-2026-predictions", JSON.stringify(predictions)); }, [predictions]);
   useEffect(() => { loadSharedPredictions().then(setPredictions).catch(() => undefined); }, []);
   useEffect(() => { loadAllGames().then(setAllGames).catch(() => undefined); }, []);
+  useEffect(() => { setFilmLoading(true); loadTeamPlays(filmTeam).then(setFilmPlays).catch(() => setFilmPlays([])).finally(() => setFilmLoading(false)); }, [filmTeam]);
 
   const participantDirectory = useMemo(() => Array.from(predictions.reduce<Map<string, string>>((map, prediction) => {
     if (!map.has(prediction.participantKey)) map.set(prediction.participantKey, prediction.participantDisplay);
@@ -270,7 +315,7 @@ export default function App() {
       <button className="language" onClick={() => setLanguage(language === "es" ? "en" : "es")}><Languages size={17} />{language === "es" ? "EN" : "ES"}</button>
     </header>
     <main>{content}</main>
-    <nav className="mobile-nav" aria-label="Mobile navigation">{navItems.slice(0, 5).map(({ id, icon: Icon }) => <button key={id} className={view === id ? "active" : ""} onClick={() => setView(id)}><Icon size={20} /><span>{t[id]}</span></button>)}</nav>
+    <nav className="mobile-nav" aria-label="Mobile navigation">{navItems.map(({ id, icon: Icon }) => <button key={id} className={view === id ? "active" : ""} onClick={() => setView(id)}><Icon size={20} /><span>{t[id]}</span></button>)}</nav>
     <footer>NFL TRACKER 2026 · {t.source} · {language === "es" ? "Uso personal · No afiliado con la NFL" : "Personal use · Not affiliated with the NFL"}</footer>
   </div>;
 
@@ -369,7 +414,14 @@ export default function App() {
     return <div className="page"><PageHeading title={language === "es" ? "CARRERA A PLAYOFFS" : "PLAYOFF RACE"} subtitle={language === "es" ? "Posición real por porcentaje y diferencial de puntos" : "Live position by win percentage and point differential"} /><div className="playoff-legend"><span><i className="leader-dot" />{language === "es" ? "Líder divisional" : "Division leader"}</span><span><i className="wildcard-dot" />Wild Card</span><span><i className="hunt-dot" />{language === "es" ? "En la pelea" : "In the hunt"}</span></div><div className="playoff-conferences">{conferenceData.map(({ conference, seeds, gamesPlayed }) => <section className="playoff-conference" key={conference}><div className="section-title"><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2><span>{gamesPlayed} {language === "es" ? "partidos finalizados" : "final games"}</span></div><div className="cluster-board"><div className="axis y">POINT DIFFERENTIAL</div><div className="axis x">WIN %</div><div className="quadrant q1">ELITE</div><div className="quadrant q2">IN THE HUNT</div><div className="quadrant q3">DEVELOPING</div><div className="quadrant q4">REBUILDING</div>{seeds.map((teamId, index) => { const value = stats[teamId]; const initial = gamesPlayed === 0; const left = initial ? 13 + (index % 4) * 24 : 8 + value.pct * 84; const top = initial ? 18 + Math.floor(index / 4) * 21 : Math.max(8, Math.min(88, 50 - Math.max(-100, Math.min(100, value.diff)) * .38)); const status = index < 4 ? "division-leader" : index < 7 ? "wildcard" : index < 10 ? "hunt" : "outside"; return <span key={teamId} title={`${findTeam(teamId).city} ${findTeam(teamId).name} · ${(value.pct * 100).toFixed(1)}% · ${value.diff >= 0 ? "+" : ""}${value.diff}`} className={`cluster-team ${status}`} style={{ left: `${left}%`, top: `${top}%` }}>{findTeam(teamId).abbr}</span>; })}</div><div className="seed-list">{seeds.slice(0, 7).map((teamId, index) => { const value = stats[teamId]; return <div key={teamId}><span>{index + 1}</span><TeamBadge id={teamId} /><strong>{findTeam(teamId).city}<small>{value.wins}-{value.losses}-{value.ties} · {(value.pct * 100).toFixed(1)}% · {value.diff >= 0 ? "+" : ""}{value.diff}</small></strong><b>{index < 4 ? (language === "es" ? "DIV" : "DIV") : "WC"}</b></div>; })}</div></section>)}</div></div>;
   }
 
-  function FilmRoom() { return <div className="page"><PageHeading title={t.filmTitle.toUpperCase()} subtitle={language === "es" ? "Explora las jugadas del último partido de cada equipo" : "Explore every team's most recent game plays"} /><section className="panel film"><div className="field"><div>20</div><div>40</div><div>50</div><div>40</div><div>20</div><span className="play-line" /></div><div className="empty-state"><BookOpen size={38} /><h2>{language === "es" ? "Esperando el primer kickoff" : "Waiting for the first kickoff"}</h2><p>{t.filmEmpty}</p></div></section></div>; }
+  function FilmRoom() {
+    const playedGameIds = [...new Set(filmPlays.map((play) => play.gameId))];
+    const latestGame = allGames.filter((game) => playedGameIds.includes(game.id)).sort((left, right) => Date.parse(right.kickoffUtc) - Date.parse(left.kickoffUtc))[0];
+    const playTypes = [...new Set(filmPlays.filter((play) => !latestGame || play.gameId === latestGame.id).map((play) => play.playType))].sort();
+    const visiblePlays = filmPlays.filter((play) => (!latestGame || play.gameId === latestGame.id) && (!filmQuarter || play.quarter === Number(filmQuarter)) && (!filmType || play.playType === filmType)).sort((left, right) => left.sequence - right.sequence);
+    const typeLabels: Record<string, [string, string]> = { pass: ["Pase", "Pass"], run: ["Carrera", "Run"], sack: ["Captura", "Sack"], interception: ["Intercepción", "Interception"], fumble: ["Balón suelto", "Fumble"], punt: ["Despeje", "Punt"], field_goal: ["Gol de campo", "Field goal"], extra_point: ["Punto extra", "Extra point"], two_point: ["Conversión de dos", "Two-point conversion"], kickoff: ["Patada de salida", "Kickoff"], penalty: ["Castigo", "Penalty"], timeout: ["Tiempo fuera", "Timeout"], kneel: ["Rodilla", "Kneel"], spike: ["Pase clavado", "Spike"], other: ["Otra", "Other"] };
+    return <div className="page"><PageHeading title={t.filmTitle.toUpperCase()} subtitle={language === "es" ? "Jugadas del último partido de cada equipo, con explicación técnica" : "Every team's latest game plays with technical explanations"} /><section className="film-toolbar panel"><label>{t.team}<select value={filmTeam} onChange={(event) => { setFilmTeam(event.target.value); setFilmQuarter(""); setFilmType(""); }}>{teams.map((team) => <option key={team.id} value={team.id}>{team.abbr} · {team.city} {team.name}</option>)}</select></label><label>{language === "es" ? "Cuarto" : "Quarter"}<select value={filmQuarter} onChange={(event) => setFilmQuarter(event.target.value)}><option value="">{t.all}</option>{[1, 2, 3, 4, 5].map((quarter) => <option key={quarter} value={quarter}>{quarter === 5 ? "OT" : `Q${quarter}`}</option>)}</select></label><label>{language === "es" ? "Tipo de jugada" : "Play type"}<select value={filmType} onChange={(event) => setFilmType(event.target.value)}><option value="">{t.all}</option>{playTypes.map((type) => <option key={type} value={type}>{typeLabels[type]?.[language === "es" ? 0 : 1] || type}</option>)}</select></label></section>{latestGame && <div className="film-game"><TeamBadge id={latestGame.away} /><strong>{findTeam(latestGame.away).abbr} vs {findTeam(latestGame.home).abbr}</strong><TeamBadge id={latestGame.home} /><span>{formatKickoff(latestGame.kickoffUtc)} · {latestGame.venue}</span></div>}{filmLoading ? <div className="empty-state"><BookOpen size={38} /><p>{language === "es" ? "Cargando jugadas…" : "Loading plays…"}</p></div> : visiblePlays.length ? <section className="play-list">{visiblePlays.map((play) => <article className={`${play.scoring ? "scoring" : ""} ${play.turnover ? "turnover" : ""}`} key={play.playId}><div className="play-context"><span>Q{play.quarter} · {play.clock}</span><b>{play.down ? `${play.down}&${play.distance}` : "—"}</b><em>{play.yards > 0 ? `+${play.yards}` : play.yards} YDS</em></div><div className="play-body"><div><span>{typeLabels[play.playType]?.[language === "es" ? 0 : 1] || play.playType}</span>{play.scoring && <b>SCORING</b>}{play.turnover && <b>TURNOVER</b>}</div><h3>{language === "es" ? play.conceptEs : play.conceptEn}</h3><p className="raw-play">{play.descriptionEn}</p><p>{language === "es" ? play.explanationEs : play.explanationEn}</p></div></article>)}</section> : <section className="panel film"><div className="field"><div>20</div><div>40</div><div>50</div><div>40</div><div>20</div><span className="play-line" /></div><div className="empty-state"><BookOpen size={38} /><h2>{language === "es" ? "Esperando el primer kickoff" : "Waiting for the first kickoff"}</h2><p>{t.filmEmpty}</p></div></section>}</div>;
+  }
 
   function Positions() { return <div className="page"><PageHeading title={t.anatomy.toUpperCase()} subtitle={language === "es" ? "Abreviaciones, nombres y funciones principales" : "Abbreviations, names and primary roles"} /><section className="panel position-table"><div className="position-head"><span>POS</span><span>{t.englishName}</span><span>{t.spanishName}</span><span>{t.function}</span></div>{positions.map(([abbr, en, es, role]) => <div className="position-row" key={abbr}><strong>{abbr}</strong><span>{en}</span><span>{es}</span><p>{language === "es" ? role : translateRole(role)}</p></div>)}</section></div>; }
 }
