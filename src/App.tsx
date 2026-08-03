@@ -15,7 +15,10 @@ interface Prediction {
   safe: boolean;
   upset: boolean;
   submittedAt: string;
+  pickHidden?: boolean;
 }
+
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycby0zg27Ts7TvVgl1ZhA1k5NKOg7VgKPsf8q9CKarc82XuzSzSlcNpdj5AoNhTG2dUPAKg/exec";
 
 const copy = {
   es: {
@@ -43,9 +46,22 @@ function loadPredictions(): Prediction[] {
 
 // The ESPN adapter keeps data-source details outside presentation components.
 async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
+  const fallback = slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : [];
+  try {
+    const backendResponse = await fetch(`${BACKEND_URL}?action=games&season=2026&seasonType=${encodeURIComponent(slot.phase)}&week=${slot.displayWeek}`);
+    if (backendResponse.ok) {
+      const backendPayload = await backendResponse.json();
+      const backendGames = (backendPayload.games || []).map((game: any): Game => ({
+        id: String(game.game_id), week: Number(game.week), kickoffUtc: game.kickoff_utc,
+        away: game.away_team_id, home: game.home_team_id, venue: game.venue || "TBD",
+        status: game.status || "scheduled", awayScore: Number(game.away_score || 0), homeScore: Number(game.home_score || 0),
+      }));
+      if (backendGames.length) return backendGames;
+    }
+  } catch { /* ESPN remains available as a read-only fallback. */ }
+
   try {
     const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${slot.seasonType}&week=${slot.espnWeek}&dates=2026`);
-    const fallback = slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : [];
     if (!response.ok) return fallback;
     const payload = await response.json();
     const mapped = (payload.events || []).map((event: any): Game | null => {
@@ -60,6 +76,21 @@ async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
     }).filter(Boolean);
     return mapped.length ? mapped : fallback;
   } catch { return slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : []; }
+}
+
+/** Reads the shared prediction history while preserving an offline cache. */
+async function loadSharedPredictions(): Promise<Prediction[]> {
+  const response = await fetch(`${BACKEND_URL}?action=predictions`);
+  if (!response.ok) throw new Error("prediction_history_unavailable");
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || "prediction_history_unavailable");
+  return (payload.predictions || []).map((prediction: any): Prediction => ({
+    id: String(prediction.prediction_id), gameId: String(prediction.game_id), week: Number(prediction.week),
+    participantDisplay: prediction.participant_name_display, participantKey: prediction.participant_name_key,
+    teamId: prediction.predicted_winner_team_id || "", safe: prediction.is_safe_pick === true,
+    upset: prediction.is_upset_pick === true, submittedAt: prediction.submitted_at_utc,
+    pickHidden: prediction.pick_hidden === true,
+  }));
 }
 
 // Chooses the most relevant schedule view when the application opens.
@@ -103,12 +134,13 @@ export default function App() {
   }, [selectedSlotId]);
   useEffect(() => { localStorage.setItem("nfl-language", language); document.documentElement.lang = language; }, [language]);
   useEffect(() => { localStorage.setItem("nfl-2026-predictions", JSON.stringify(predictions)); }, [predictions]);
+  useEffect(() => { loadSharedPredictions().then(setPredictions).catch(() => undefined); }, []);
 
   const participants = useMemo(() => [...new Set(predictions.map((p) => p.participantDisplay))].sort(), [predictions]);
   const visibleHistory = predictions.filter((prediction) => (!memberFilter || prediction.participantDisplay === memberFilter) && (!gameFilter || prediction.gameId === gameFilter));
 
   // This submit path mirrors the future server validation and gives immediate offline behavior.
-  function submitPrediction(event: React.FormEvent<HTMLFormElement>) {
+  async function submitPrediction(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const participantDisplay = String(form.get("participant") || "").trim().replace(/\s+/g, " ");
@@ -120,12 +152,31 @@ export default function App() {
     if (predictions.some((item) => item.gameId === gameId && item.participantKey === participantKey)) { setMessage(t.duplicate); return; }
     const safe = form.get("safe") === "on";
     const upset = form.get("upset") === "on";
-    if (safe && predictions.some((item) => item.week === game.week && item.participantKey === participantKey && item.safe)) { setMessage(language === "es" ? "Ya registraste una selección segura para esta semana." : "You already submitted a safe pick for this week."); return; }
-    if (upset && predictions.some((item) => item.week === game.week && item.participantKey === participantKey && item.upset)) { setMessage(language === "es" ? "Ya registraste una sorpresa para esta semana." : "You already submitted an upset pick for this week."); return; }
-    setPredictions((current) => [...current, { id: crypto.randomUUID(), gameId, week: game.week, participantDisplay, participantKey, teamId, safe, upset, submittedAt: new Date().toISOString() }]);
-    setMessage(t.saved);
-    event.currentTarget.reset();
-    setSelectedGameId("");
+    try {
+      const response = await fetch(BACKEND_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "savePrediction", participantName: participantDisplay, gameId, teamId, safe, upset, week: game.week, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        const errors: Record<string, string> = {
+          duplicate_prediction: t.duplicate,
+          game_locked: language === "es" ? "El partido ya comenzó; el pronóstico está bloqueado." : "The game has started; predictions are locked.",
+          safe_pick_limit: language === "es" ? "Ya registraste una selección segura para esta semana." : "You already submitted a safe pick for this week.",
+          upset_pick_limit: language === "es" ? "Ya registraste una sorpresa para esta semana." : "You already submitted an upset pick for this week.",
+          pick_cannot_be_safe_and_upset: language === "es" ? "Un mismo pronóstico no puede ser selección segura y sorpresa." : "A prediction cannot be both a safe pick and an upset.",
+        };
+        setMessage(errors[result.error] || (language === "es" ? "No fue posible guardar el pronóstico." : "The prediction could not be saved."));
+        return;
+      }
+      setPredictions(await loadSharedPredictions());
+      setMessage(t.saved);
+      event.currentTarget.reset();
+      setSelectedGameId("");
+    } catch {
+      setMessage(language === "es" ? "No pudimos conectar con el servicio. Intenta nuevamente." : "We could not reach the service. Please try again.");
+    }
   }
 
   function formatKickoff(iso: string) {
@@ -172,7 +223,7 @@ export default function App() {
   function Predictions() {
     const selectedGame = games.find((game) => game.id === selectedGameId);
     const eligibleTeams = selectedGame ? [findTeam(selectedGame.away), findTeam(selectedGame.home)] : [];
-    return <div className="page"><PageHeading title={language === "es" ? "PRONÓSTICOS" : "PREDICTIONS"} subtitle={t.noScore} /><div className="prediction-layout"><section className="panel"><h2>{t.register}</h2><form className="prediction-form" onSubmit={submitPrediction}><label>{t.participant}<input name="participant" required minLength={3} autoComplete="name" placeholder={language === "es" ? "Escribe tu nombre" : "Enter your name"} /></label><label>{language === "es" ? "Partido" : "Game"}<select name="gameId" required value={selectedGameId} onChange={(event) => { setSelectedGameId(event.target.value); setMessage(""); }}><option value="" disabled>{language === "es" ? "Selecciona un partido" : "Select a game"}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr} · {formatKickoff(game.kickoffUtc)}</option>)}</select></label><label>{t.choose}<select key={selectedGameId} name="teamId" required defaultValue="" disabled={!selectedGame}><option value="" disabled>{language === "es" ? "Selecciona un equipo" : "Select a team"}</option>{eligibleTeams.map((team) => <option key={team.id} value={team.id}>{team.city} {team.name}</option>)}</select></label><div className="check-row"><label><input type="checkbox" name="safe" /> {t.safe}</label><label><input type="checkbox" name="upset" /> {t.upset}</label></div><button className="primary" type="submit">{t.save}</button>{message && <p className={message === t.saved ? "form-success" : "form-error"} role="status">{message}</p>}</form></section><section className="panel history-panel"><div className="section-title"><h2>{t.history}</h2><span>{visibleHistory.length}</span></div><div className="filter-row"><select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}><option value="">{t.filterMember}: {t.all}</option>{participants.map((name) => <option key={name}>{name}</option>)}</select><select value={gameFilter} onChange={(e) => setGameFilter(e.target.value)}><option value="">{t.filterGame}: {t.all}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr}</option>)}</select></div>{visibleHistory.length === 0 ? <div className="empty-state"><Target size={34} /><p>{t.empty}</p></div> : <div className="history-list">{visibleHistory.map((prediction) => { const game = games.find((item) => item.id === prediction.gameId); const revealed = game ? Date.now() >= Date.parse(game.kickoffUtc) : false; return <article key={prediction.id}><div><strong>{prediction.participantDisplay}</strong><small>{game ? `${findTeam(game.away).abbr} vs ${findTeam(game.home).abbr}` : prediction.gameId}</small></div>{revealed ? <TeamBadge id={prediction.teamId} /> : <span className="team-badge">•••</span>}<span>{revealed ? (prediction.safe ? "★ SAFE" : prediction.upset ? "⚡ UPSET" : t.scheduled) : (language === "es" ? "Oculto hasta el kickoff" : "Hidden until kickoff")}</span></article>; })}</div>}</section></div></div>;
+    return <div className="page"><PageHeading title={language === "es" ? "PRONÓSTICOS" : "PREDICTIONS"} subtitle={t.noScore} /><div className="prediction-layout"><section className="panel"><h2>{t.register}</h2><form className="prediction-form" onSubmit={submitPrediction}><label>{t.participant}<input name="participant" required minLength={3} autoComplete="name" placeholder={language === "es" ? "Escribe tu nombre" : "Enter your name"} /></label><label>{language === "es" ? "Partido" : "Game"}<select name="gameId" required value={selectedGameId} onChange={(event) => { setSelectedGameId(event.target.value); setMessage(""); }}><option value="" disabled>{language === "es" ? "Selecciona un partido" : "Select a game"}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr} · {formatKickoff(game.kickoffUtc)}</option>)}</select></label><label>{t.choose}<select key={selectedGameId} name="teamId" required defaultValue="" disabled={!selectedGame}><option value="" disabled>{language === "es" ? "Selecciona un equipo" : "Select a team"}</option>{eligibleTeams.map((team) => <option key={team.id} value={team.id}>{team.city} {team.name}</option>)}</select></label><div className="check-row"><label><input type="checkbox" name="safe" /> {t.safe}</label><label><input type="checkbox" name="upset" /> {t.upset}</label></div><button className="primary" type="submit">{t.save}</button>{message && <p className={message === t.saved ? "form-success" : "form-error"} role="status">{message}</p>}</form></section><section className="panel history-panel"><div className="section-title"><h2>{t.history}</h2><span>{visibleHistory.length}</span></div><div className="filter-row"><select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}><option value="">{t.filterMember}: {t.all}</option>{participants.map((name) => <option key={name}>{name}</option>)}</select><select value={gameFilter} onChange={(e) => setGameFilter(e.target.value)}><option value="">{t.filterGame}: {t.all}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr}</option>)}</select></div>{visibleHistory.length === 0 ? <div className="empty-state"><Target size={34} /><p>{t.empty}</p></div> : <div className="history-list">{visibleHistory.map((prediction) => { const game = games.find((item) => item.id === prediction.gameId); const revealed = Boolean(game && prediction.teamId && !prediction.pickHidden && Date.now() >= Date.parse(game.kickoffUtc)); return <article key={prediction.id}><div><strong>{prediction.participantDisplay}</strong><small>{game ? `${findTeam(game.away).abbr} vs ${findTeam(game.home).abbr}` : prediction.gameId}</small></div>{revealed ? <TeamBadge id={prediction.teamId} /> : <span className="team-badge">•••</span>}<span>{revealed ? (prediction.safe ? "★ SAFE" : prediction.upset ? "⚡ UPSET" : t.scheduled) : (language === "es" ? "Oculto hasta el kickoff" : "Hidden until kickoff")}</span></article>; })}</div>}</section></div></div>;
   }
 
   function Dashboard() { const topTeam = Object.entries(predictions.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.teamId]: (acc[item.teamId] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1])[0]; return <div className="page"><PageHeading title="DASHBOARD" subtitle={language === "es" ? "Resumen de participación y temporada 2026" : "Participation and 2026 season overview"} /><section className="summary-grid"><div><span>{language === "es" ? "Participantes" : "Participants"}</span><strong>{participants.length}</strong><small>{t.records}</small></div><div><span>{t.records}</span><strong>{predictions.length}</strong><small>WEEK 1</small></div><div><span>{t.accuracy}</span><strong>—</strong><small>{language === "es" ? "Disponible al terminar partidos" : "Available after final games"}</small></div><div><span>{t.popular}</span><strong>{topTeam ? findTeam(topTeam[0]).abbr : "—"}</strong><small>{topTeam ? `${topTeam[1]} ${t.records.toLowerCase()}` : t.empty}</small></div></section><section className="panel"><h2>{language === "es" ? "Actividad por participante" : "Activity by participant"}</h2>{participants.length ? <div className="leaderboard">{participants.map((name, index) => { const count = predictions.filter((item) => item.participantDisplay === name).length; return <div key={name}><span>{index + 1}</span><strong>{name}</strong><div><i style={{ width: `${Math.min(100, count * 12)}%` }} /></div><b>{count}</b></div>; })}</div> : <div className="empty-state"><Users size={34} /><p>{t.empty}</p></div>}</section><section><h2>{t.nextGames}</h2><div className="games-grid">{games.slice(0, 3).map((game) => <GameCard key={game.id} game={game} compact />)}</div></section></div>; }
