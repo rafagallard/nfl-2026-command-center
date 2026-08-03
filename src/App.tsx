@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Shield, Target, Trophy, Users } from "lucide-react";
-import { fallbackGames, findTeam, Game, hallOfFameGame, positions, scheduleSlots, ScheduleSlot, teams } from "./data";
+import { fallbackGames, findTeam, Game, hallOfFameGame, positionGroups, scheduleSlots, ScheduleSlot, teams } from "./data";
 
 type Language = "es" | "en";
 type View = "home" | "standings" | "predictions" | "dashboard" | "clusters" | "plays" | "positions";
@@ -423,24 +423,13 @@ export default function App() {
     return <div className="page"><PageHeading title={t.filmTitle.toUpperCase()} subtitle={language === "es" ? "Jugadas del último partido de cada equipo, con explicación técnica" : "Every team's latest game plays with technical explanations"} /><section className="film-toolbar panel"><label>{t.team}<select value={filmTeam} onChange={(event) => { setFilmTeam(event.target.value); setFilmQuarter(""); setFilmType(""); }}>{teams.map((team) => <option key={team.id} value={team.id}>{team.abbr} · {team.city} {team.name}</option>)}</select></label><label>{language === "es" ? "Cuarto" : "Quarter"}<select value={filmQuarter} onChange={(event) => setFilmQuarter(event.target.value)}><option value="">{t.all}</option>{[1, 2, 3, 4, 5].map((quarter) => <option key={quarter} value={quarter}>{quarter === 5 ? "OT" : `Q${quarter}`}</option>)}</select></label><label>{language === "es" ? "Tipo de jugada" : "Play type"}<select value={filmType} onChange={(event) => setFilmType(event.target.value)}><option value="">{t.all}</option>{playTypes.map((type) => <option key={type} value={type}>{typeLabels[type]?.[language === "es" ? 0 : 1] || type}</option>)}</select></label></section>{latestGame && <div className="film-game"><TeamBadge id={latestGame.away} /><strong>{findTeam(latestGame.away).abbr} vs {findTeam(latestGame.home).abbr}</strong><TeamBadge id={latestGame.home} /><span>{formatKickoff(latestGame.kickoffUtc)} · {latestGame.venue}</span></div>}{filmLoading ? <div className="empty-state"><BookOpen size={38} /><p>{language === "es" ? "Cargando jugadas…" : "Loading plays…"}</p></div> : visiblePlays.length ? <section className="play-list">{visiblePlays.map((play) => <article className={`${play.scoring ? "scoring" : ""} ${play.turnover ? "turnover" : ""}`} key={play.playId}><div className="play-context"><span>Q{play.quarter} · {play.clock}</span><b>{play.down ? `${play.down}&${play.distance}` : "—"}</b><em>{play.yards > 0 ? `+${play.yards}` : play.yards} YDS</em></div><div className="play-body"><div><span>{typeLabels[play.playType]?.[language === "es" ? 0 : 1] || play.playType}</span>{play.scoring && <b>SCORING</b>}{play.turnover && <b>TURNOVER</b>}</div><h3>{language === "es" ? play.conceptEs : play.conceptEn}</h3><p className="raw-play">{play.descriptionEn}</p><p>{language === "es" ? play.explanationEs : play.explanationEn}</p></div></article>)}</section> : <section className="panel film"><div className="field"><div>20</div><div>40</div><div>50</div><div>40</div><div>20</div><span className="play-line" /></div><div className="empty-state"><BookOpen size={38} /><h2>{language === "es" ? "Esperando el primer kickoff" : "Waiting for the first kickoff"}</h2><p>{t.filmEmpty}</p></div></section>}</div>;
   }
 
-  function Positions() { return <div className="page"><PageHeading title={t.anatomy.toUpperCase()} subtitle={language === "es" ? "Abreviaciones, nombres y funciones principales" : "Abbreviations, names and primary roles"} /><section className="panel position-table"><div className="position-head"><span>POS</span><span>{t.englishName}</span><span>{t.spanishName}</span><span>{t.function}</span></div>{positions.map(([abbr, en, es, role]) => <div className="position-row" key={abbr}><strong>{abbr}</strong><span>{en}</span><span>{es}</span><p>{language === "es" ? role : translateRole(role)}</p></div>)}</section></div>; }
-}
-
-function translateRole(role: string) {
-  const map: Record<string, string> = {
-    "Dirige la ofensiva, lee la defensa y entrega o lanza el balón.": "Leads the offense, reads the defense, and hands off or throws the ball.",
-    "Corre con el balón, recibe pases cortos y ayuda en protección.": "Runs the ball, catches short passes, and helps in protection.",
-    "Corredor de poder": "Power back",
-    "Bloquea, participa en corto yardaje y sirve como opción de pase.": "Blocks, handles short yardage, and serves as a receiving option.",
-    "Corre rutas para crear separación y recibir pases.": "Runs routes to create separation and catch passes.",
-    "Combina funciones de receptor y bloqueador.": "Combines receiving and blocking duties.",
-    "Protege al quarterback y abre carriles para la carrera.": "Protects the quarterback and opens running lanes.",
-    "Controla el interior y presiona al quarterback.": "Controls the interior and pressures the quarterback.",
-    "Contiene la carrera exterior y busca capturas.": "Sets the edge and pursues sacks.",
-    "Defiende carrera, cubre pases y participa en cargas.": "Defends the run, covers passes, and blitzes.",
-    "Cubre receptores y defiende pases exteriores.": "Covers receivers and defends outside passes.",
-    "Protege la zona profunda y apoya contra la carrera.": "Protects the deep field and supports run defense.",
-    "Ejecuta las jugadas especializadas de patada.": "Handles specialized kicking plays.",
-  };
-  return map[role] || role;
+  function Positions() {
+    return <div className="page"><PageHeading title={t.anatomy.toUpperCase()} subtitle={language === "es" ? "Las tres unidades: ofensiva, defensiva y equipos especiales" : "All three units: offense, defense, and special teams"} />
+      <div className="position-groups">{positionGroups.map((group) => <section className={`panel position-table position-${group.id}`} key={group.id}>
+        <div className="position-group-title"><span>{group.id === "offense" ? "O" : group.id === "defense" ? "D" : "ST"}</span><div><h2>{language === "es" ? group.labelEs : group.labelEn}</h2><p>{language === "es" ? `${group.positions.length} posiciones y funciones principales` : `${group.positions.length} positions and primary roles`}</p></div></div>
+        <div className="position-head"><span>POS</span><span>{t.englishName}</span><span>{t.spanishName}</span><span>{t.function}</span></div>
+        {group.positions.map(([abbr, en, es, roleEs, roleEn]) => <div className="position-row" key={abbr}><strong>{abbr}</strong><span>{en}</span><span>{es}</span><p>{language === "es" ? roleEs : roleEn}</p></div>)}
+      </section>)}</div>
+    </div>;
+  }
 }
