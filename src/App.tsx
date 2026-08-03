@@ -144,6 +144,7 @@ export default function App() {
   const [weekFilter, setWeekFilter] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
   const [resultFilter, setResultFilter] = useState("");
+  const [standingsPhase, setStandingsPhase] = useState<"preseason" | "regular">("preseason");
   const t = copy[language];
 
   const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
@@ -255,7 +256,26 @@ export default function App() {
     </div>;
   }
 
-  function Standings() { return <div className="page"><PageHeading title={language === "es" ? "CLASIFICACIONES NFL 2026" : "NFL 2026 STANDINGS"} subtitle={language === "es" ? "Pretemporada · Todos los equipos comienzan 0–0" : "Preseason · Every team starts 0–0"} /><div className="conference-columns">{(["AFC", "NFC"] as const).map((conference) => <section key={conference}><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2>{(["East", "North", "South", "West"] as const).map((division) => <div className="division-card" key={division}><div className="division-title"><span>{conference}</span><strong>{division.toUpperCase()}</strong></div><div className="standings-head"><span>{t.team}</span><span>W</span><span>L</span><span>PCT</span><span>PF</span><span>DIFF</span></div>{teams.filter((team) => team.conference === conference && team.division === division).map((team) => <div className="standings-row" key={team.id}><span><TeamBadge id={team.id} /><b>{team.abbr}</b><em>{team.city}</em></span><span>0</span><span>0</span><span>.000</span><span>0</span><span>0</span></div>)}</div>)}</section>)}</div></div>; }
+  function Standings() {
+    const eligibleGames = allGames.filter((game) => game.status === "final" && game.away !== "tbd" && game.home !== "tbd" && (standingsPhase === "preseason" ? ["hall-of-fame", "preseason"].includes(gamePhase(game)) : gamePhase(game) === "regular"));
+    const stats = teams.reduce<Record<string, { wins: number; losses: number; ties: number; pf: number; pa: number; results: string[] }>>((acc, team) => {
+      acc[team.id] = { wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, results: [] };
+      return acc;
+    }, {});
+    [...eligibleGames].sort((left, right) => Date.parse(left.kickoffUtc) - Date.parse(right.kickoffUtc)).forEach((game) => {
+      const away = stats[game.away]; const home = stats[game.home];
+      if (!away || !home) return;
+      const awayScore = Number(game.awayScore || 0); const homeScore = Number(game.homeScore || 0);
+      away.pf += awayScore; away.pa += homeScore; home.pf += homeScore; home.pa += awayScore;
+      if (awayScore === homeScore) { away.ties += 1; home.ties += 1; away.results.push("T"); home.results.push("T"); }
+      else if (awayScore > homeScore) { away.wins += 1; home.losses += 1; away.results.push("W"); home.results.push("L"); }
+      else { home.wins += 1; away.losses += 1; home.results.push("W"); away.results.push("L"); }
+    });
+    const percentage = (teamId: string) => { const value = stats[teamId]; const played = value.wins + value.losses + value.ties; return played ? (value.wins + value.ties * .5) / played : 0; };
+    const streak = (teamId: string) => { const results = stats[teamId].results; if (!results.length) return "—"; const last = results[results.length - 1]; let count = 0; for (let index = results.length - 1; index >= 0 && results[index] === last; index -= 1) count += 1; return `${last}${count}`; };
+    const sortedDivision = (conference: "AFC" | "NFC", division: "East" | "North" | "South" | "West") => teams.filter((team) => team.conference === conference && team.division === division).sort((left, right) => percentage(right.id) - percentage(left.id) || (stats[right.id].pf - stats[right.id].pa) - (stats[left.id].pf - stats[left.id].pa) || stats[right.id].pf - stats[left.id].pf || left.city.localeCompare(right.city));
+    return <div className="page"><PageHeading title={language === "es" ? "CLASIFICACIONES NFL 2026" : "NFL 2026 STANDINGS"} subtitle={language === "es" ? "Récord, puntos, diferencial y racha por división" : "Record, points, differential and streak by division"} /><section className="schedule-toolbar panel"><label>{language === "es" ? "Etapa" : "Stage"}<select value={standingsPhase} onChange={(event) => setStandingsPhase(event.target.value as "preseason" | "regular")}><option value="preseason">{language === "es" ? "Pretemporada" : "Preseason"}</option><option value="regular">{language === "es" ? "Temporada regular" : "Regular season"}</option></select></label><span>{eligibleGames.length} {language === "es" ? "partidos finalizados incluidos" : "final games included"}</span></section><div className="conference-columns">{(["AFC", "NFC"] as const).map((conference) => <section key={conference}><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2>{(["East", "North", "South", "West"] as const).map((division) => <div className="division-card" key={division}><div className="division-title"><span>{conference}</span><strong>{division.toUpperCase()}</strong></div><div className="standings-head"><span>{t.team}</span><span>W</span><span>L</span><span>T</span><span>PCT</span><span>PF</span><span>DIFF</span></div>{sortedDivision(conference, division).map((team) => { const value = stats[team.id]; const pct = percentage(team.id); const diff = value.pf - value.pa; return <div className="standings-row" key={team.id}><span><TeamBadge id={team.id} /><b>{team.abbr}</b><em>{team.city}</em></span><span>{value.wins}</span><span>{value.losses}</span><span>{value.ties}</span><span>{pct.toFixed(3).replace(/^0/, "")}</span><span>{value.pf}</span><span className={diff > 0 ? "positive" : diff < 0 ? "negative" : ""}>{diff > 0 ? `+${diff}` : diff}<small>{streak(team.id)}</small></span></div>; })}</div>)}</section>)}</div></div>;
+  }
 
   function Predictions() {
     const selectedGame = games.find((game) => game.id === selectedGameId);
