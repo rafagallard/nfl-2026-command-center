@@ -62,11 +62,32 @@ function doGet(event) {
     if (action === "health") return jsonResponse_({ ok: true, service: "nfl-2026-backend", season: APP.season, serverTime: new Date().toISOString() });
     if (action === "games") return jsonResponse_({ ok: true, games: getGames_(parameters) });
     if (action === "predictions") return jsonResponse_({ ok: true, predictions: getPredictions_(parameters) });
+    if (action === "plays") return jsonResponse_({ ok: true, plays: getPlays_(parameters) });
     return jsonResponse_({ ok: false, error: "unsupported_action" });
   } catch (error) {
     console.error(error);
     return jsonResponse_({ ok: false, error: "server_error", message: String(error.message || error) });
   }
+}
+
+/** Devuelve jugadas enriquecidas con su explicación técnica bilingüe. */
+function getPlays_(parameters) {
+  const tags = readTable_("Play_Tags").records.reduce(function (map, tag) {
+    map[String(tag.play_id)] = tag;
+    return map;
+  }, {});
+  return readTable_("Play_By_Play").records
+    .filter(function (play) {
+      const gameMatches = !parameters.gameId || String(play.game_id) === String(parameters.gameId);
+      const teamMatches = !parameters.teamId || String(play.possession_team_id) === String(parameters.teamId);
+      const quarterMatches = !parameters.quarter || Number(play.quarter) === Number(parameters.quarter);
+      const typeMatches = !parameters.playType || String(play.play_type) === String(parameters.playType);
+      return gameMatches && teamMatches && quarterMatches && typeMatches;
+    })
+    .map(function (play) {
+      play.tags = tags[String(play.play_id)] || {};
+      return play;
+    });
 }
 
 /** Atiende escrituras; por ahora sólo se permite registrar pronósticos. */
