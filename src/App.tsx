@@ -427,11 +427,14 @@ export default function App() {
     return <div className="page"><PageHeading title={t.anatomy.toUpperCase()} subtitle={language === "es" ? "Las tres unidades: ofensiva, defensiva y equipos especiales" : "All three units: offense, defense, and special teams"} />
       <div className="position-groups">{positionGroups.map((group) => <section className={`panel position-table position-${group.id}`} key={group.id}>
         <div className="position-group-title"><span>{group.id === "offense" ? "O" : group.id === "defense" ? "D" : "ST"}</span><div><h2>{language === "es" ? group.labelEs : group.labelEn}</h2><p>{language === "es" ? `${group.positions.length} posiciones y funciones principales` : `${group.positions.length} positions and primary roles`}</p></div></div>
-        <div className="position-head"><span>POS</span><span>{language === "es" ? "Unidad" : "Unit"}</span><span>{t.englishName}</span><span>{t.spanishName}</span><span>{t.function}</span></div>
         {group.positions.map(([abbr, en, es, roleEs, roleEn]) => <div className="position-row" key={abbr}>
           <strong>{abbr}</strong>
-          <span className={`position-unit unit-${group.id}`}>{language === "es" ? group.labelEs : group.labelEn}</span>
-          <span>{en}</span><span>{es}</span><p>{language === "es" ? roleEs : roleEn}</p>
+          <div className="position-details">
+            <span className={`position-unit unit-${group.id}`}>{language === "es" ? group.labelEs : group.labelEn}</span>
+            <h3>{en}</h3>
+            <span className="position-spanish">{es}</span>
+            <p>{language === "es" ? roleEs : roleEn}</p>
+          </div>
         </div>)}
       </section>)}</div>
     </div>;
