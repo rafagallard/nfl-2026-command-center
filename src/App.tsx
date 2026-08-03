@@ -128,6 +128,46 @@ function getInitialScheduleSlotId() {
   return "post-5";
 }
 
+interface TeamSeasonStats {
+  teamId: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  pf: number;
+  pa: number;
+  played: number;
+  pct: number;
+  diff: number;
+}
+
+/** Derives the public season stage from the scheduled kickoff. */
+function phaseForGame(game?: Game) {
+  if (!game) return "";
+  if (game.week === 0) return "hall-of-fame";
+  if (game.kickoffUtc < "2026-09-01") return "preseason";
+  if (game.kickoffUtc < "2027-01-12") return "regular";
+  return "postseason";
+}
+
+/** Calculates one record per team from final games in the requested stage. */
+function calculateTeamSeasonStats(games: Game[], phase: "preseason" | "regular") {
+  const stats = teams.reduce<Record<string, TeamSeasonStats>>((acc, team) => {
+    acc[team.id] = { teamId: team.id, wins: 0, losses: 0, ties: 0, pf: 0, pa: 0, played: 0, pct: 0, diff: 0 };
+    return acc;
+  }, {});
+  games.filter((game) => game.status === "final" && game.away !== "tbd" && game.home !== "tbd" && (phase === "preseason" ? ["hall-of-fame", "preseason"].includes(phaseForGame(game)) : phaseForGame(game) === "regular")).forEach((game) => {
+    const away = stats[game.away]; const home = stats[game.home];
+    if (!away || !home) return;
+    const awayScore = Number(game.awayScore || 0); const homeScore = Number(game.homeScore || 0);
+    away.played += 1; home.played += 1; away.pf += awayScore; away.pa += homeScore; home.pf += homeScore; home.pa += awayScore;
+    if (awayScore === homeScore) { away.ties += 1; home.ties += 1; }
+    else if (awayScore > homeScore) { away.wins += 1; home.losses += 1; }
+    else { home.wins += 1; away.losses += 1; }
+  });
+  Object.values(stats).forEach((value) => { value.pct = value.played ? (value.wins + value.ties * .5) / value.played : 0; value.diff = value.pf - value.pa; });
+  return stats;
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem("nfl-language") as Language) || "es");
   const [view, setView] = useState<View>("home");
@@ -165,7 +205,7 @@ export default function App() {
     return map;
   }, new Map()).entries()).map(([key, name]) => ({ key, name })).sort((left, right) => left.name.localeCompare(right.name)), [predictions]);
   const participants = participantDirectory.map((participant) => participant.name);
-  const gamePhase = (game?: Game) => game ? (game.week === 0 ? "hall-of-fame" : game.kickoffUtc < "2026-09-01" ? "preseason" : game.kickoffUtc < "2027-01-12" ? "regular" : "postseason") : "";
+  const gamePhase = phaseForGame;
   const filteredGameOptions = allGames.filter((game) => (!phaseFilter || gamePhase(game) === phaseFilter) && (!weekFilter || game.week === Number(weekFilter)) && game.away !== "tbd" && game.home !== "tbd");
   const visibleHistory = predictions.filter((prediction) => {
     const game = allGames.find((item) => item.id === prediction.gameId);
@@ -316,7 +356,18 @@ export default function App() {
     </div>;
   }
 
-  function Clusters() { return <div className="page"><PageHeading title={language === "es" ? "CARRERA A PLAYOFFS" : "PLAYOFF RACE"} subtitle={language === "es" ? "Clúster por conferencia · Se activará con los resultados de 2026" : "Conference clusters · Activates with 2026 results"} /><div className="cluster-legend"><span><i className="afc-dot" />AFC (16)</span><span><i className="nfc-dot" />NFC (16)</span></div><section className="cluster-board"><div className="axis y">POINT DIFFERENTIAL</div><div className="axis x">WIN %</div><div className="quadrant q1">ELITE</div><div className="quadrant q2">IN THE HUNT</div><div className="quadrant q3">DEVELOPING</div><div className="quadrant q4">REBUILDING</div>{teams.map((team, index) => <span key={team.id} className={`cluster-team ${team.conference.toLowerCase()}`} style={{ left: `${18 + ((index * 17) % 68)}%`, top: `${17 + ((index * 29) % 68)}%` }}>{team.abbr}</span>)}</section></div>; }
+  function Clusters() {
+    const stats = calculateTeamSeasonStats(allGames, "regular");
+    const compareTeams = (leftId: string, rightId: string) => stats[rightId].pct - stats[leftId].pct || stats[rightId].diff - stats[leftId].diff || stats[rightId].pf - stats[leftId].pf || findTeam(leftId).city.localeCompare(findTeam(rightId).city);
+    const conferenceData = (["AFC", "NFC"] as const).map((conference) => {
+      const conferenceTeams = teams.filter((team) => team.conference === conference);
+      const divisionLeaders = (["East", "North", "South", "West"] as const).map((division) => conferenceTeams.filter((team) => team.division === division).map((team) => team.id).sort(compareTeams)[0]);
+      const remaining = conferenceTeams.map((team) => team.id).filter((teamId) => !divisionLeaders.includes(teamId)).sort(compareTeams);
+      const seeds = [...divisionLeaders.sort(compareTeams), ...remaining];
+      return { conference, seeds, gamesPlayed: conferenceTeams.reduce((sum, team) => sum + stats[team.id].played, 0) / 2 };
+    });
+    return <div className="page"><PageHeading title={language === "es" ? "CARRERA A PLAYOFFS" : "PLAYOFF RACE"} subtitle={language === "es" ? "Posición real por porcentaje y diferencial de puntos" : "Live position by win percentage and point differential"} /><div className="playoff-legend"><span><i className="leader-dot" />{language === "es" ? "Líder divisional" : "Division leader"}</span><span><i className="wildcard-dot" />Wild Card</span><span><i className="hunt-dot" />{language === "es" ? "En la pelea" : "In the hunt"}</span></div><div className="playoff-conferences">{conferenceData.map(({ conference, seeds, gamesPlayed }) => <section className="playoff-conference" key={conference}><div className="section-title"><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2><span>{gamesPlayed} {language === "es" ? "partidos finalizados" : "final games"}</span></div><div className="cluster-board"><div className="axis y">POINT DIFFERENTIAL</div><div className="axis x">WIN %</div><div className="quadrant q1">ELITE</div><div className="quadrant q2">IN THE HUNT</div><div className="quadrant q3">DEVELOPING</div><div className="quadrant q4">REBUILDING</div>{seeds.map((teamId, index) => { const value = stats[teamId]; const initial = gamesPlayed === 0; const left = initial ? 13 + (index % 4) * 24 : 8 + value.pct * 84; const top = initial ? 18 + Math.floor(index / 4) * 21 : Math.max(8, Math.min(88, 50 - Math.max(-100, Math.min(100, value.diff)) * .38)); const status = index < 4 ? "division-leader" : index < 7 ? "wildcard" : index < 10 ? "hunt" : "outside"; return <span key={teamId} title={`${findTeam(teamId).city} ${findTeam(teamId).name} · ${(value.pct * 100).toFixed(1)}% · ${value.diff >= 0 ? "+" : ""}${value.diff}`} className={`cluster-team ${status}`} style={{ left: `${left}%`, top: `${top}%` }}>{findTeam(teamId).abbr}</span>; })}</div><div className="seed-list">{seeds.slice(0, 7).map((teamId, index) => { const value = stats[teamId]; return <div key={teamId}><span>{index + 1}</span><TeamBadge id={teamId} /><strong>{findTeam(teamId).city}<small>{value.wins}-{value.losses}-{value.ties} · {(value.pct * 100).toFixed(1)}% · {value.diff >= 0 ? "+" : ""}{value.diff}</small></strong><b>{index < 4 ? (language === "es" ? "DIV" : "DIV") : "WC"}</b></div>; })}</div></section>)}</div></div>;
+  }
 
   function FilmRoom() { return <div className="page"><PageHeading title={t.filmTitle.toUpperCase()} subtitle={language === "es" ? "Explora las jugadas del último partido de cada equipo" : "Explore every team's most recent game plays"} /><section className="panel film"><div className="field"><div>20</div><div>40</div><div>50</div><div>40</div><div>20</div><span className="play-line" /></div><div className="empty-state"><BookOpen size={38} /><h2>{language === "es" ? "Esperando el primer kickoff" : "Waiting for the first kickoff"}</h2><p>{t.filmEmpty}</p></div></section></div>; }
 
