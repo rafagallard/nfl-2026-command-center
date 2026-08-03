@@ -100,19 +100,49 @@ export const scheduleSlots: ScheduleSlot[] = [
   { id: "post-5", phase: "postseason", seasonType: 3, espnWeek: 5, displayWeek: 5, labelEs: "Super Bowl LXI", labelEn: "Super Bowl LXI" },
 ];
 
-export const positions = [
-  ["QB", "Quarterback", "Mariscal de campo", "Dirige la ofensiva, lee la defensa y entrega o lanza el balón."],
-  ["RB", "Running Back", "Corredor", "Corre con el balón, recibe pases cortos y ayuda en protección."],
-  ["FB", "Fullback", "Corredor de poder", "Bloquea, participa en corto yardaje y sirve como opción de pase."],
-  ["WR", "Wide Receiver", "Receptor abierto", "Corre rutas para crear separación y recibir pases."],
-  ["TE", "Tight End", "Ala cerrada", "Combina funciones de receptor y bloqueador."],
-  ["LT/LG/C/RG/RT", "Offensive Line", "Línea ofensiva", "Protege al quarterback y abre carriles para la carrera."],
-  ["DT/NT", "Defensive Tackle / Nose Tackle", "Tackle defensivo", "Controla el interior y presiona al quarterback."],
-  ["DE/EDGE", "Defensive End / Edge Rusher", "Ala defensiva", "Contiene la carrera exterior y busca capturas."],
-  ["LB", "Linebacker", "Apoyador", "Defiende carrera, cubre pases y participa en cargas."],
-  ["CB", "Cornerback", "Esquinero", "Cubre receptores y defiende pases exteriores."],
-  ["FS/SS", "Free Safety / Strong Safety", "Safety libre / fuerte", "Protege la zona profunda y apoya contra la carrera."],
-  ["K/P/LS", "Kicker / Punter / Long Snapper", "Pateador / despejador / centro largo", "Ejecuta las jugadas especializadas de patada."],
+export type Position = [abbr: string, englishName: string, spanishName: string, roleEs: string, roleEn: string];
+
+// Keep the three football units separate so the position guide is easy to scan
+// and every abbreviation can be explained without hiding several jobs in one row.
+export const positionGroups: { id: "offense" | "defense" | "special"; labelEs: string; labelEn: string; positions: Position[] }[] = [
+  {
+    id: "offense", labelEs: "Ofensiva", labelEn: "Offense", positions: [
+      ["QB", "Quarterback", "Mariscal de campo", "Dirige la ofensiva, lee la defensa y entrega o lanza el balón.", "Leads the offense, reads the defense, and hands off or throws the ball."],
+      ["RB/HB", "Running Back / Halfback", "Corredor", "Corre con el balón, recibe pases y ayuda en protección.", "Runs the ball, catches passes, and helps in pass protection."],
+      ["FB", "Fullback", "Corredor de poder", "Bloquea, participa en corto yardaje y sirve como opción de pase.", "Blocks, handles short-yardage situations, and serves as a receiving option."],
+      ["WR", "Wide Receiver", "Receptor abierto", "Corre rutas para crear separación y recibir pases.", "Runs routes to create separation and catch passes."],
+      ["TE", "Tight End", "Ala cerrada", "Combina funciones de receptor y bloqueador.", "Combines receiving and blocking duties."],
+      ["LT/RT", "Left / Right Tackle", "Tackle izquierdo / derecho", "Protege los extremos de la línea, especialmente el lado ciego del quarterback.", "Protects the edges of the line, especially the quarterback's blind side."],
+      ["LG/RG", "Left / Right Guard", "Guardia izquierdo / derecho", "Bloquea en el interior y abre carriles para la carrera.", "Blocks inside and opens running lanes."],
+      ["C", "Center", "Centro", "Inicia la jugada con el snap y coordina las asignaciones de bloqueo.", "Starts the play with the snap and coordinates blocking assignments."],
+    ],
+  },
+  {
+    id: "defense", labelEs: "Defensiva", labelEn: "Defense", positions: [
+      ["DT", "Defensive Tackle", "Tackle defensivo", "Ataca los huecos interiores, detiene la carrera y presiona al quarterback.", "Attacks interior gaps, stops the run, and pressures the quarterback."],
+      ["NT", "Nose Tackle", "Tackle nariz", "Ocupa bloqueadores frente al centro y protege el interior de la defensa.", "Occupies blockers over the center and anchors the interior defense."],
+      ["DE", "Defensive End", "Ala defensiva", "Contiene la carrera exterior y presiona desde el extremo de la línea.", "Sets the edge against the run and rushes from the end of the line."],
+      ["EDGE", "Edge Rusher", "Cazador de quarterback por el borde", "Se especializa en atacar al quarterback desde el borde de la formación.", "Specializes in attacking the quarterback from the edge of the formation."],
+      ["MLB/ILB", "Middle / Inside Linebacker", "Apoyador medio / interior", "Lee la ofensiva, dirige ajustes y defiende la carrera entre los tackles.", "Reads the offense, calls adjustments, and defends the run between the tackles."],
+      ["OLB", "Outside Linebacker", "Apoyador exterior", "Cubre zonas cortas, contiene la carrera y puede cargar al quarterback.", "Covers underneath zones, contains the run, and can rush the quarterback."],
+      ["CB", "Cornerback", "Esquinero", "Marca receptores y disputa pases cerca de las bandas.", "Covers receivers and contests passes near the sidelines."],
+      ["NB", "Nickelback", "Esquinero níquel", "Cubre al receptor interior cuando la defensa utiliza cinco backs defensivos.", "Covers the slot receiver when the defense uses five defensive backs."],
+      ["FS", "Free Safety", "Safety libre", "Protege la zona profunda y ayuda en cobertura de pase.", "Protects the deep field and provides help in pass coverage."],
+      ["SS", "Strong Safety", "Safety fuerte", "Apoya contra la carrera y cubre alas cerradas o zonas cortas.", "Supports the run and covers tight ends or underneath zones."],
+    ],
+  },
+  {
+    id: "special", labelEs: "Equipos especiales", labelEn: "Special Teams", positions: [
+      ["K", "Kicker", "Pateador", "Ejecuta goles de campo, puntos extra y, normalmente, patadas de salida.", "Kicks field goals, extra points, and usually kickoffs."],
+      ["P", "Punter", "Despejador", "Despeja el balón para ganar posición de campo cuando termina una serie ofensiva.", "Punts to gain field position when an offensive drive ends."],
+      ["LS", "Long Snapper", "Centro largo", "Entrega snaps largos y precisos al holder o al despejador.", "Delivers long, accurate snaps to the holder or punter."],
+      ["H", "Holder", "Sujetador", "Recibe el snap y coloca el balón para goles de campo y puntos extra.", "Receives the snap and places the ball for field goals and extra points."],
+      ["KR", "Kick Returner", "Retornador de patadas de salida", "Recibe kickoffs y busca avanzar el balón para mejorar la posición de campo.", "Returns kickoffs to improve field position."],
+      ["PR", "Punt Returner", "Retornador de despejes", "Recibe despejes, decide si pide recepción libre y busca yardas de retorno.", "Fields punts, decides when to call a fair catch, and seeks return yardage."],
+      ["GUN", "Gunner", "Artillero", "Baja rápidamente por la banda para detener al retornador en despejes.", "Sprints downfield near the sideline to tackle the punt returner."],
+      ["PP", "Punt Protector", "Protector de despeje", "Organiza la protección y bloquea la presión frente al despejador.", "Organizes protection and blocks pressure in front of the punter."],
+    ],
+  },
 ];
 
 export const findTeam = (id: string) => teams.find((team) => team.id === id)!;
