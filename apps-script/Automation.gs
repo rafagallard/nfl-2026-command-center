@@ -32,11 +32,12 @@ function scheduledSync2026() {
   const startedAt = new Date();
   try {
     syncFullSchedule2026();
+    const playResult = syncRecentPlayByPlay2026();
     const result = updatePredictionResults_();
     writeSyncLog_({
       startedAt: startedAt, finishedAt: new Date(), status: "success",
       recordsRead: readTable_(APP.sheets.games).records.length,
-      recordsInserted: 0, recordsUpdated: result.updated,
+      recordsInserted: playResult.playsImported, recordsUpdated: result.updated,
       errors: 0, message: "Calendario, marcadores y pronósticos actualizados.",
     });
   } catch (error) {
@@ -98,12 +99,13 @@ function writeSyncLog_(result) {
 function testScheduledSync2026() {
   const startedAt = new Date();
   syncFullSchedule2026();
+  const playResult = syncRecentPlayByPlay2026();
   const result = updatePredictionResults_();
   writeSyncLog_({
     startedAt: startedAt, finishedAt: new Date(), status: "success",
     recordsRead: readTable_(APP.sheets.games).records.length,
-    recordsInserted: 0, recordsUpdated: result.updated, errors: 0,
+    recordsInserted: playResult.playsImported, recordsUpdated: result.updated, errors: 0,
     message: "Prueba manual completada correctamente.",
   });
-  console.log(JSON.stringify({ ok: true, predictionsUpdated: result.updated }, null, 2));
+  console.log(JSON.stringify({ ok: true, playsImported: playResult.playsImported, predictionsUpdated: result.updated }, null, 2));
 }
