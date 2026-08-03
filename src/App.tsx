@@ -97,6 +97,19 @@ async function loadSharedPredictions(): Promise<Prediction[]> {
   }));
 }
 
+/** Loads the complete season index used by historical filters. */
+async function loadAllGames(): Promise<Game[]> {
+  const response = await fetch(`${BACKEND_URL}?action=games&season=2026`);
+  if (!response.ok) throw new Error("game_history_unavailable");
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error || "game_history_unavailable");
+  return (payload.games || []).map((game: any): Game => ({
+    id: String(game.game_id), week: Number(game.week), kickoffUtc: game.kickoff_utc,
+    away: game.away_team_id, home: game.home_team_id, venue: game.venue || "TBD",
+    status: game.status || "scheduled", awayScore: Number(game.away_score || 0), homeScore: Number(game.home_score || 0),
+  }));
+}
+
 // Chooses the most relevant schedule view when the application opens.
 function getInitialScheduleSlotId() {
   const now = Date.now();
@@ -120,12 +133,17 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [selectedSlotId, setSelectedSlotId] = useState(getInitialScheduleSlotId);
   const [games, setGames] = useState<Game[]>(hallOfFameGame);
+  const [allGames, setAllGames] = useState<Game[]>(hallOfFameGame);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [predictions, setPredictions] = useState<Prediction[]>(loadPredictions);
   const [message, setMessage] = useState("");
   const [selectedGameId, setSelectedGameId] = useState("");
   const [memberFilter, setMemberFilter] = useState("");
   const [gameFilter, setGameFilter] = useState("");
+  const [phaseFilter, setPhaseFilter] = useState("");
+  const [weekFilter, setWeekFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("");
+  const [resultFilter, setResultFilter] = useState("");
   const t = copy[language];
 
   const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
@@ -139,9 +157,24 @@ export default function App() {
   useEffect(() => { localStorage.setItem("nfl-language", language); document.documentElement.lang = language; }, [language]);
   useEffect(() => { localStorage.setItem("nfl-2026-predictions", JSON.stringify(predictions)); }, [predictions]);
   useEffect(() => { loadSharedPredictions().then(setPredictions).catch(() => undefined); }, []);
+  useEffect(() => { loadAllGames().then(setAllGames).catch(() => undefined); }, []);
 
-  const participants = useMemo(() => [...new Set(predictions.map((p) => p.participantDisplay))].sort(), [predictions]);
-  const visibleHistory = predictions.filter((prediction) => (!memberFilter || prediction.participantDisplay === memberFilter) && (!gameFilter || prediction.gameId === gameFilter));
+  const participantDirectory = useMemo(() => Array.from(predictions.reduce<Map<string, string>>((map, prediction) => {
+    if (!map.has(prediction.participantKey)) map.set(prediction.participantKey, prediction.participantDisplay);
+    return map;
+  }, new Map()).entries()).map(([key, name]) => ({ key, name })).sort((left, right) => left.name.localeCompare(right.name)), [predictions]);
+  const participants = participantDirectory.map((participant) => participant.name);
+  const gamePhase = (game?: Game) => game ? (game.week === 0 ? "hall-of-fame" : game.kickoffUtc < "2026-09-01" ? "preseason" : game.kickoffUtc < "2027-01-12" ? "regular" : "postseason") : "";
+  const filteredGameOptions = allGames.filter((game) => (!phaseFilter || gamePhase(game) === phaseFilter) && (!weekFilter || game.week === Number(weekFilter)) && game.away !== "tbd" && game.home !== "tbd");
+  const visibleHistory = predictions.filter((prediction) => {
+    const game = allGames.find((item) => item.id === prediction.gameId);
+    return (!memberFilter || prediction.participantKey === memberFilter)
+      && (!phaseFilter || gamePhase(game) === phaseFilter)
+      && (!weekFilter || game?.week === Number(weekFilter))
+      && (!gameFilter || prediction.gameId === gameFilter)
+      && (!teamFilter || prediction.teamId === teamFilter)
+      && (!resultFilter || prediction.result === resultFilter);
+  });
 
   // This submit path mirrors the future server validation and gives immediate offline behavior.
   async function submitPrediction(event: React.FormEvent<HTMLFormElement>) {
@@ -227,7 +260,7 @@ export default function App() {
   function Predictions() {
     const selectedGame = games.find((game) => game.id === selectedGameId);
     const eligibleTeams = selectedGame ? [findTeam(selectedGame.away), findTeam(selectedGame.home)] : [];
-    return <div className="page"><PageHeading title={language === "es" ? "PRONÓSTICOS" : "PREDICTIONS"} subtitle={t.noScore} /><div className="prediction-layout"><section className="panel"><h2>{t.register}</h2><form className="prediction-form" onSubmit={submitPrediction}><label>{t.participant}<input name="participant" required minLength={3} autoComplete="name" placeholder={language === "es" ? "Escribe tu nombre" : "Enter your name"} /></label><label>{language === "es" ? "Partido" : "Game"}<select name="gameId" required value={selectedGameId} onChange={(event) => { setSelectedGameId(event.target.value); setMessage(""); }}><option value="" disabled>{language === "es" ? "Selecciona un partido" : "Select a game"}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr} · {formatKickoff(game.kickoffUtc)}</option>)}</select></label><label>{t.choose}<select key={selectedGameId} name="teamId" required defaultValue="" disabled={!selectedGame}><option value="" disabled>{language === "es" ? "Selecciona un equipo" : "Select a team"}</option>{eligibleTeams.map((team) => <option key={team.id} value={team.id}>{team.city} {team.name}</option>)}</select></label><div className="check-row"><label><input type="checkbox" name="safe" /> {t.safe}</label><label><input type="checkbox" name="upset" /> {t.upset}</label></div><button className="primary" type="submit">{t.save}</button>{message && <p className={message === t.saved ? "form-success" : "form-error"} role="status">{message}</p>}</form></section><section className="panel history-panel"><div className="section-title"><h2>{t.history}</h2><span>{visibleHistory.length}</span></div><div className="filter-row"><select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}><option value="">{t.filterMember}: {t.all}</option>{participants.map((name) => <option key={name}>{name}</option>)}</select><select value={gameFilter} onChange={(e) => setGameFilter(e.target.value)}><option value="">{t.filterGame}: {t.all}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr}</option>)}</select></div>{visibleHistory.length === 0 ? <div className="empty-state"><Target size={34} /><p>{t.empty}</p></div> : <div className="history-list">{visibleHistory.map((prediction) => { const game = games.find((item) => item.id === prediction.gameId); const revealed = Boolean(game && prediction.teamId && !prediction.pickHidden && Date.now() >= Date.parse(game.kickoffUtc)); return <article key={prediction.id}><div><strong>{prediction.participantDisplay}</strong><small>{game ? `${findTeam(game.away).abbr} vs ${findTeam(game.home).abbr}` : prediction.gameId}</small></div>{revealed ? <TeamBadge id={prediction.teamId} /> : <span className="team-badge">•••</span>}<span>{revealed ? (prediction.safe ? "★ SAFE" : prediction.upset ? "⚡ UPSET" : t.scheduled) : (language === "es" ? "Oculto hasta el kickoff" : "Hidden until kickoff")}</span></article>; })}</div>}</section></div></div>;
+    return <div className="page"><PageHeading title={language === "es" ? "PRONÓSTICOS" : "PREDICTIONS"} subtitle={t.noScore} /><div className="prediction-layout"><section className="panel"><h2>{t.register}</h2><form className="prediction-form" onSubmit={submitPrediction}><label>{t.participant}<input name="participant" required minLength={3} autoComplete="name" placeholder={language === "es" ? "Escribe tu nombre" : "Enter your name"} /></label><label>{language === "es" ? "Partido" : "Game"}<select name="gameId" required value={selectedGameId} onChange={(event) => { setSelectedGameId(event.target.value); setMessage(""); }}><option value="" disabled>{language === "es" ? "Selecciona un partido" : "Select a game"}</option>{games.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr} · {formatKickoff(game.kickoffUtc)}</option>)}</select></label><label>{t.choose}<select key={selectedGameId} name="teamId" required defaultValue="" disabled={!selectedGame}><option value="" disabled>{language === "es" ? "Selecciona un equipo" : "Select a team"}</option>{eligibleTeams.map((team) => <option key={team.id} value={team.id}>{team.city} {team.name}</option>)}</select></label><div className="check-row"><label><input type="checkbox" name="safe" /> {t.safe}</label><label><input type="checkbox" name="upset" /> {t.upset}</label></div><button className="primary" type="submit">{t.save}</button>{message && <p className={message === t.saved ? "form-success" : "form-error"} role="status">{message}</p>}</form></section><section className="panel history-panel"><div className="section-title"><h2>{t.history}</h2><span>{visibleHistory.length}</span></div><div className="filter-grid"><select value={phaseFilter} onChange={(e) => { setPhaseFilter(e.target.value); setWeekFilter(""); setGameFilter(""); }}><option value="">{language === "es" ? "Todas las etapas" : "All stages"}</option><option value="hall-of-fame">Hall of Fame</option><option value="preseason">{language === "es" ? "Pretemporada" : "Preseason"}</option><option value="regular">{language === "es" ? "Temporada regular" : "Regular season"}</option><option value="postseason">Playoffs</option></select><select value={weekFilter} onChange={(e) => { setWeekFilter(e.target.value); setGameFilter(""); }}><option value="">{language === "es" ? "Todas las semanas" : "All weeks"}</option>{[...new Set(allGames.filter((game) => !phaseFilter || gamePhase(game) === phaseFilter).map((game) => game.week))].sort((a, b) => a - b).map((week) => <option key={week} value={week}>{week === 0 ? "Hall of Fame" : `${language === "es" ? "Semana" : "Week"} ${week}`}</option>)}</select><select value={gameFilter} onChange={(e) => setGameFilter(e.target.value)}><option value="">{t.filterGame}: {t.all}</option>{filteredGameOptions.map((game) => <option key={game.id} value={game.id}>{findTeam(game.away).abbr} vs {findTeam(game.home).abbr}</option>)}</select><select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)}><option value="">{t.filterMember}: {t.all}</option>{participantDirectory.map((participant) => <option key={participant.key} value={participant.key}>{participant.name}</option>)}</select><select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}><option value="">{language === "es" ? "Todos los equipos" : "All teams"}</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.abbr} · {team.city}</option>)}</select><select value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}><option value="">{language === "es" ? "Todos los resultados" : "All results"}</option><option value="pending">{language === "es" ? "Pendientes" : "Pending"}</option><option value="correct">{language === "es" ? "Acertados" : "Correct"}</option><option value="incorrect">{language === "es" ? "No acertados" : "Incorrect"}</option></select></div>{visibleHistory.length === 0 ? <div className="empty-state"><Target size={34} /><p>{language === "es" ? "No hay registros que coincidan con los filtros." : "No entries match the selected filters."}</p></div> : <div className="history-list">{visibleHistory.map((prediction) => { const game = allGames.find((item) => item.id === prediction.gameId); const revealed = Boolean(game && prediction.teamId && !prediction.pickHidden && Date.now() >= Date.parse(game.kickoffUtc)); return <article key={prediction.id}><div><strong>{prediction.participantDisplay}</strong><small>{game ? `${findTeam(game.away).abbr} vs ${findTeam(game.home).abbr} · ${formatKickoff(game.kickoffUtc)}` : prediction.gameId}</small></div>{revealed ? <TeamBadge id={prediction.teamId} /> : <span className="team-badge">•••</span>}<span>{prediction.result === "correct" ? `✓ ${t.correct}` : prediction.result === "incorrect" ? (language === "es" ? "✕ No acertado" : "✕ Incorrect") : revealed ? (prediction.safe ? "★ SAFE" : prediction.upset ? "⚡ UPSET" : t.scheduled) : (language === "es" ? "Oculto hasta el kickoff" : "Hidden until kickoff")}</span></article>; })}</div>}</section></div></div>;
   }
 
   function Dashboard() {
@@ -236,11 +269,11 @@ export default function App() {
     const correctPredictions = settledPredictions.filter((item) => item.isCorrect);
     const accuracy = settledPredictions.length ? Math.round((correctPredictions.length / settledPredictions.length) * 100) : null;
     const topTeam = Object.entries(revealedPredictions.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.teamId]: (acc[item.teamId] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1])[0];
-    const participantStats = participants.map((name) => {
-      const entries = predictions.filter((item) => item.participantDisplay === name);
+    const participantStats = participantDirectory.map((participant) => {
+      const entries = predictions.filter((item) => item.participantKey === participant.key);
       const settled = entries.filter((item) => item.result === "correct" || item.result === "incorrect");
       const correct = settled.filter((item) => item.isCorrect).length;
-      return { name, entries: entries.length, settled: settled.length, correct, accuracy: settled.length ? Math.round((correct / settled.length) * 100) : null };
+      return { name: participant.name, entries: entries.length, settled: settled.length, correct, accuracy: settled.length ? Math.round((correct / settled.length) * 100) : null };
     }).sort((left, right) => right.correct - left.correct || (right.accuracy || 0) - (left.accuracy || 0) || left.name.localeCompare(right.name));
     const gameStats = Object.values(settledPredictions.reduce<Record<string, { gameId: string; entries: number; correct: number }>>((acc, item) => {
       const current = acc[item.gameId] || { gameId: item.gameId, entries: 0, correct: 0 };
