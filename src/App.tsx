@@ -4,6 +4,7 @@ import { fallbackGames, findTeam, Game, hallOfFameGame, positionGroups, schedule
 
 type Language = "es" | "en";
 type View = "home" | "standings" | "predictions" | "dashboard" | "clusters" | "plays" | "positions";
+type PositionUnitFilter = "all" | "offense" | "defense" | "special";
 
 interface Prediction {
   id: string;
@@ -229,6 +230,7 @@ export default function App() {
   const [filmType, setFilmType] = useState("");
   const [filmPlays, setFilmPlays] = useState<PlayRecord[]>([]);
   const [filmLoading, setFilmLoading] = useState(false);
+  const [positionFilter, setPositionFilter] = useState<PositionUnitFilter>("all");
   const t = copy[language];
 
   const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
@@ -316,7 +318,7 @@ export default function App() {
     </header>
     <main>{content}</main>
     <nav className="mobile-nav" aria-label="Mobile navigation">{navItems.map(({ id, icon: Icon }) => <button key={id} className={view === id ? "active" : ""} onClick={() => setView(id)}><Icon size={20} /><span>{t[id]}</span></button>)}</nav>
-    <footer>NFL TRACKER 2026 · {t.source} · {language === "es" ? "Uso personal · No afiliado con la NFL" : "Personal use · Not affiliated with the NFL"}</footer>
+    <footer>NFL TRACKER 2026 · {t.source} · {language === "es" ? "Uso personal · No afiliado con la NFL" : "Personal use · Not affiliated with the NFL"}<small>BUILD {import.meta.env.VITE_BUILD_SHA?.slice(0, 7) || "LOCAL"}</small></footer>
   </div>;
 
   function PageHeading({ title, subtitle }: { title: string; subtitle: string }) { return <div className="page-heading"><p className="eyebrow">NFL TRACKER 2026</p><h1>{title}</h1><p>{subtitle}</p></div>; }
@@ -424,18 +426,26 @@ export default function App() {
   }
 
   function Positions() {
-    return <div className="page"><PageHeading title={t.anatomy.toUpperCase()} subtitle={language === "es" ? "Las tres unidades: ofensiva, defensiva y equipos especiales" : "All three units: offense, defense, and special teams"} />
-      <div className="position-groups">{positionGroups.map((group) => <section className={`panel position-table position-${group.id}`} key={group.id}>
+    const visibleGroups = positionFilter === "all" ? positionGroups : positionGroups.filter((group) => group.id === positionFilter);
+    const filters: Array<{ id: PositionUnitFilter; labelEs: string; labelEn: string }> = [
+      { id: "all", labelEs: "Todas", labelEn: "All" },
+      ...positionGroups.map((group) => ({ id: group.id, labelEs: group.labelEs, labelEn: group.labelEn })),
+    ];
+    return <div className="page positions-page"><PageHeading title={t.anatomy.toUpperCase()} subtitle={language === "es" ? "Las tres unidades: ofensiva, defensiva y equipos especiales" : "All three units: offense, defense, and special teams"} />
+      <nav className="position-filters" aria-label={language === "es" ? "Filtrar posiciones por unidad" : "Filter positions by unit"}>
+        {filters.map((filter) => <button key={filter.id} type="button" className={positionFilter === filter.id ? "active" : ""} aria-pressed={positionFilter === filter.id} onClick={() => setPositionFilter(filter.id)}>{language === "es" ? filter.labelEs : filter.labelEn}</button>)}
+      </nav>
+      <div className="position-groups">{visibleGroups.map((group) => <section className={`panel position-table position-${group.id}`} key={group.id}>
         <div className="position-group-title"><span>{group.id === "offense" ? "O" : group.id === "defense" ? "D" : "ST"}</span><div><h2>{language === "es" ? group.labelEs : group.labelEn}</h2><p>{language === "es" ? `${group.positions.length} posiciones y funciones principales` : `${group.positions.length} positions and primary roles`}</p></div></div>
-        {group.positions.map(([abbr, en, es, roleEs, roleEn]) => <div className="position-row" key={abbr}>
-          <strong>{abbr}</strong>
+        <div className="position-card-grid">{group.positions.map(([abbr, en, es, roleEs, roleEn]) => <article className="position-card" key={abbr}>
+          <strong className="position-abbr">{abbr}</strong>
           <div className="position-details">
             <span className={`position-unit unit-${group.id}`}>{language === "es" ? group.labelEs : group.labelEn}</span>
             <h3>{en}</h3>
             <span className="position-spanish">{es}</span>
             <p>{language === "es" ? roleEs : roleEn}</p>
           </div>
-        </div>)}
+        </article>)}</div>
       </section>)}</div>
     </div>;
   }

@@ -27,7 +27,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
+      # The public footer and build-info.json identify the exact commit served by Pages.
+      - name: Build and validate the release artifact
+        run: npm run build
+        env:
+          VITE_BUILD_SHA: ${{ github.sha }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -35,4 +39,3 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
-
