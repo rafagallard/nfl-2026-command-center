@@ -24,13 +24,32 @@ function normalizeTeamId_(abbreviation) {
   return aliases[abbreviation] || String(abbreviation || "").toLowerCase();
 }
 
+/** Descarga JSON con encabezados de navegador y reintentos cortos. */
+function fetchEspnJson_(url, label) {
+  const attempts = 3;
+  let lastCode = 0;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        Accept: "application/json, text/plain, */*",
+        "User-Agent": "Mozilla/5.0 (compatible; NFLTracker2026/1.0)",
+      },
+    });
+    lastCode = response.getResponseCode();
+    if (lastCode === 200) return JSON.parse(response.getContentText());
+    if ([403, 429, 500, 502, 503, 504].indexOf(lastCode) === -1) break;
+    if (attempt < attempts) Utilities.sleep(attempt * 1200);
+  }
+  throw new Error("ESPN respondió " + lastCode + " al consultar " + label + ".");
+}
+
 /** Descarga una etapa y transforma cada evento al esquema de la pestaña Games. */
 function fetchScheduleSlot_(slot) {
   const url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard" +
     "?seasontype=" + slot.seasonType + "&week=" + slot.espnWeek + "&dates=2026&limit=100";
-  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  if (response.getResponseCode() !== 200) throw new Error("ESPN respondió " + response.getResponseCode() + " para " + url);
-  const payload = JSON.parse(response.getContentText());
+  const payload = fetchEspnJson_(url, "calendario " + slot.seasonTypeName + " semana " + slot.week);
 
   return (payload.events || []).map(function (event) {
     const competition = event.competitions && event.competitions[0];
@@ -54,6 +73,57 @@ function fetchScheduleSlot_(slot) {
       source_url: url, updated_at: new Date(),
     };
   }).filter(Boolean);
+}
+
+/**
+ * Actualiza únicamente partidos cercanos a su kickoff mediante el endpoint de
+ * resumen por game_id. Así el proceso horario no vuelve a solicitar 26 semanas.
+ */
+function syncRecentGameStatuses2026() {
+  const table = readTable_(APP.sheets.games);
+  const now = Date.now();
+  const windowStart = now - 3 * 86400000;
+  const windowEnd = now + 2 * 86400000;
+  const errors = [];
+  let updated = 0;
+
+  table.rows.forEach(function (row) {
+    const gameIdIndex = table.headers.indexOf("game_id");
+    const kickoffIndex = table.headers.indexOf("kickoff_utc");
+    const kickoff = new Date(row[kickoffIndex]).getTime();
+    if (!isFinite(kickoff) || kickoff < windowStart || kickoff > windowEnd) return;
+
+    const gameId = String(row[gameIdIndex]);
+    const url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=" + gameId;
+    try {
+      const payload = fetchEspnJson_(url, "partido " + gameId);
+      const competition = payload.header && payload.header.competitions && payload.header.competitions[0];
+      if (!competition) throw new Error("El resumen no contiene competition.");
+      const home = (competition.competitors || []).find(function (team) { return team.homeAway === "home"; });
+      const away = (competition.competitors || []).find(function (team) { return team.homeAway === "away"; });
+      if (!home || !away) throw new Error("El resumen no contiene ambos equipos.");
+      const state = competition.status && competition.status.type && competition.status.type.state;
+      const homeScore = Number(home.score || 0);
+      const awayScore = Number(away.score || 0);
+      let winnerTeamId = "";
+      if (state === "post" && homeScore !== awayScore) {
+        winnerTeamId = homeScore > awayScore ? normalizeTeamId_(home.team.abbreviation) : normalizeTeamId_(away.team.abbreviation);
+      }
+      row[table.headers.indexOf("status")] = state === "post" ? "final" : state === "in" ? "live" : "scheduled";
+      row[table.headers.indexOf("away_score")] = awayScore;
+      row[table.headers.indexOf("home_score")] = homeScore;
+      row[table.headers.indexOf("winner_team_id")] = winnerTeamId;
+      row[table.headers.indexOf("source_url")] = url;
+      row[table.headers.indexOf("updated_at")] = new Date();
+      updated += 1;
+    } catch (error) {
+      errors.push(gameId + ": " + String(error.message || error));
+    }
+  });
+
+  if (updated) table.sheet.getRange(2, 1, table.rows.length, table.headers.length).setValues(table.rows);
+  if (!updated && errors.length) throw new Error(errors.join(" | "));
+  return { gamesRead: updated + errors.length, gamesUpdated: updated, errors: errors };
 }
 
 /**
