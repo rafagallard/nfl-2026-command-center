@@ -31,14 +31,21 @@ function scheduledSync2026() {
   if (!lock.tryLock(5000)) return;
   const startedAt = new Date();
   try {
-    syncFullSchedule2026();
-    const playResult = syncRecentPlayByPlay2026();
-    const result = updatePredictionResults_();
+    const stepErrors = [];
+    let scheduleResult = { gamesRead: 0, gamesUpdated: 0, errors: [] };
+    let playResult = { playsImported: 0, errors: [] };
+    let result = { updated: 0 };
+    try { scheduleResult = syncRecentGameStatuses2026(); } catch (error) { stepErrors.push("marcadores: " + String(error.message || error)); }
+    try { playResult = syncRecentPlayByPlay2026(); } catch (error) { stepErrors.push("jugadas: " + String(error.message || error)); }
+    try { result = updatePredictionResults_(); } catch (error) { stepErrors.push("pronósticos: " + String(error.message || error)); }
+    Array.prototype.push.apply(stepErrors, scheduleResult.errors || []);
+    Array.prototype.push.apply(stepErrors, playResult.errors || []);
     writeSyncLog_({
-      startedAt: startedAt, finishedAt: new Date(), status: "success",
-      recordsRead: readTable_(APP.sheets.games).records.length,
+      startedAt: startedAt, finishedAt: new Date(), status: stepErrors.length ? "partial" : "success",
+      recordsRead: scheduleResult.gamesRead,
       recordsInserted: playResult.playsImported, recordsUpdated: result.updated,
-      errors: 0, message: "Calendario, marcadores y pronósticos actualizados.",
+      errors: stepErrors.length,
+      message: stepErrors.length ? "Sincronización parcial: " + stepErrors.join(" | ") : "Marcadores, jugadas y pronósticos actualizados.",
     });
   } catch (error) {
     console.error(error);
@@ -98,12 +105,12 @@ function writeSyncLog_(result) {
 /** Prueba manual completa que sincroniza, califica y registra el resultado. */
 function testScheduledSync2026() {
   const startedAt = new Date();
-  syncFullSchedule2026();
+  const scheduleResult = syncRecentGameStatuses2026();
   const playResult = syncRecentPlayByPlay2026();
   const result = updatePredictionResults_();
   writeSyncLog_({
     startedAt: startedAt, finishedAt: new Date(), status: "success",
-    recordsRead: readTable_(APP.sheets.games).records.length,
+    recordsRead: scheduleResult.gamesRead,
     recordsInserted: playResult.playsImported, recordsUpdated: result.updated, errors: 0,
     message: "Prueba manual completada correctamente.",
   });
