@@ -53,9 +53,7 @@ function ensureSheetRows_(sheet, requiredRows) {
 /** Descarga y transforma todas las jugadas disponibles para un partido. */
 function fetchGamePlays_(game) {
   const url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=" + game.game_id;
-  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  if (response.getResponseCode() !== 200) throw new Error("No fue posible descargar jugadas del partido " + game.game_id);
-  const payload = JSON.parse(response.getContentText());
+  const payload = fetchEspnJson_(url, "jugadas del partido " + game.game_id);
   const drives = ((payload.drives && payload.drives.previous) || []).slice();
   if (payload.drives && payload.drives.current) drives.push(payload.drives.current);
   const plays = [];
@@ -99,16 +97,25 @@ function syncRecentPlayByPlay2026() {
     return { gamesRead: 0, playsImported: 0 };
   }
 
-  const affectedIds = recentGames.reduce(function (set, game) { set[String(game.game_id)] = true; return set; }, {});
   const playTable = readTable_("Play_By_Play");
   const tagTable = readTable_("Play_Tags");
-  const plays = playTable.records.filter(function (play) { return !affectedIds[String(play.game_id)]; });
+  const importedByGame = {};
+  const errors = [];
+  recentGames.forEach(function (game) {
+    try {
+      importedByGame[String(game.game_id)] = fetchGamePlays_(game);
+    } catch (error) {
+      errors.push(String(game.game_id) + ": " + String(error.message || error));
+    }
+  });
+
+  const replacedIds = Object.keys(importedByGame).reduce(function (set, gameId) { set[gameId] = true; return set; }, {});
+  const plays = playTable.records.filter(function (play) { return !replacedIds[String(play.game_id)]; });
   const retainedPlayIds = plays.reduce(function (set, play) { set[String(play.play_id)] = true; return set; }, {});
   const tags = tagTable.records.filter(function (tag) { return retainedPlayIds[String(tag.play_id)]; });
-  recentGames.forEach(function (game) {
-    const imported = fetchGamePlays_(game);
-    Array.prototype.push.apply(plays, imported.plays);
-    Array.prototype.push.apply(tags, imported.tags);
+  Object.keys(importedByGame).forEach(function (gameId) {
+    Array.prototype.push.apply(plays, importedByGame[gameId].plays);
+    Array.prototype.push.apply(tags, importedByGame[gameId].tags);
   });
 
   const playRows = plays.map(function (record) { return playTable.headers.map(function (header) { return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : ""; }); });
@@ -119,5 +126,5 @@ function syncRecentPlayByPlay2026() {
   if (playRows.length) playTable.sheet.getRange(2, 1, playRows.length, playTable.headers.length).setValues(playRows);
   if (tagRows.length) tagTable.sheet.getRange(2, 1, tagRows.length, tagTable.headers.length).setValues(tagRows);
   console.log(JSON.stringify({ ok: true, gamesRead: recentGames.length, playsImported: playRows.length }, null, 2));
-  return { gamesRead: recentGames.length, playsImported: playRows.length };
+  return { gamesRead: recentGames.length, playsImported: playRows.length, errors: errors };
 }
