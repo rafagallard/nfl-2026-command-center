@@ -273,7 +273,22 @@ export default function App() {
     const gameId = String(form.get("gameId") || "");
     const teamId = String(form.get("teamId") || "");
     const game = games.find((item) => item.id === gameId);
-    if (!participantKey || !game || !teamId || ![game.away, game.home].includes(teamId) || Date.now() >= Date.parse(game.kickoffUtc)) return;
+    if (!participantKey || !gameId || !teamId) {
+      setMessage(language === "es" ? "Completa el nombre, el partido y el equipo." : "Complete the name, game, and team fields.");
+      return;
+    }
+    if (!game) {
+      setMessage(language === "es" ? "Ese partido ya no está disponible. Actualiza la página y vuelve a seleccionarlo." : "That game is no longer available. Refresh the page and select it again.");
+      return;
+    }
+    if (![game.away, game.home].includes(teamId)) {
+      setMessage(language === "es" ? "El equipo seleccionado no pertenece a ese partido." : "The selected team is not in that game.");
+      return;
+    }
+    if (game.status !== "scheduled" || Date.now() >= Date.parse(game.kickoffUtc)) {
+      setMessage(language === "es" ? "El partido ya comenzó; el pronóstico está bloqueado." : "The game has started; predictions are locked.");
+      return;
+    }
     if (predictions.some((item) => item.gameId === gameId && item.participantKey === participantKey)) { setMessage(t.duplicate); return; }
     const safe = form.get("safe") === "on";
     const upset = form.get("upset") === "on";
@@ -291,6 +306,9 @@ export default function App() {
           safe_pick_limit: language === "es" ? "Ya registraste una selección segura para esta semana." : "You already submitted a safe pick for this week.",
           upset_pick_limit: language === "es" ? "Ya registraste una sorpresa para esta semana." : "You already submitted an upset pick for this week.",
           pick_cannot_be_safe_and_upset: language === "es" ? "Un mismo pronóstico no puede ser selección segura y sorpresa." : "A prediction cannot be both a safe pick and an upset.",
+          missing_fields: language === "es" ? "Completa el nombre, el partido y el equipo." : "Complete the name, game, and team fields.",
+          game_not_found: language === "es" ? "El partido no existe en el calendario activo. Actualiza la página." : "The game is not in the active schedule. Refresh the page.",
+          team_not_in_game: language === "es" ? "El equipo seleccionado no pertenece a ese partido." : "The selected team is not in that game.",
         };
         setMessage(errors[result.error] || (language === "es" ? "No fue posible guardar el pronóstico." : "The prediction could not be saved."));
         return;
@@ -300,7 +318,25 @@ export default function App() {
       event.currentTarget.reset();
       setSelectedGameId("");
     } catch {
-      setMessage(language === "es" ? "No pudimos conectar con el servicio. Intenta nuevamente." : "We could not reach the service. Please try again.");
+      // Apps Script may accept the POST and then expose its JSON through a
+      // cross-origin redirect that some browsers refuse to return to fetch().
+      // Confirm the write through the readable history endpoint before
+      // reporting a connection failure or tempting the user to submit twice.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
+        try {
+          const sharedPredictions = await loadSharedPredictions();
+          const savedPrediction = sharedPredictions.some((item) => item.gameId === gameId && item.participantKey === participantKey);
+          if (savedPrediction) {
+            setPredictions(sharedPredictions);
+            setMessage(t.saved);
+            event.currentTarget.reset();
+            setSelectedGameId("");
+            return;
+          }
+        } catch { /* Try the history endpoint again after a short delay. */ }
+      }
+      setMessage(language === "es" ? "No pudimos confirmar el registro. Revisa el historial antes de intentarlo otra vez." : "We could not confirm the submission. Check the history before trying again.");
     }
   }
 
