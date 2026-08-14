@@ -325,7 +325,8 @@ export default function App() {
           game_not_found: language === "es" ? "El partido no existe en el calendario activo. Actualiza la página." : "The game is not in the active schedule. Refresh the page.",
           team_not_in_game: language === "es" ? "El equipo seleccionado no pertenece a ese partido." : "The selected team is not in that game.",
         };
-        setMessage(errors[result.error] || (language === "es" ? "No fue posible guardar el pronóstico." : "The prediction could not be saved."));
+        const backendDetail = [result.error, result.message].filter(Boolean).join(": ");
+        setMessage(errors[result.error] || `${language === "es" ? "No fue posible guardar el pronóstico" : "The prediction could not be saved"}${backendDetail ? ` (${backendDetail})` : ""}.`);
         return;
       }
       setPredictions(await loadSharedPredictions());
