@@ -169,7 +169,6 @@ function savePrediction_(body) {
       const predictionGame = gamesById[String(prediction.game_id)];
       return predictionGame && String(predictionGame.season_type) === String(game.season_type) && Number(predictionGame.week) === Number(game.week);
     });
-    if (safe && sameStageAndWeek.some(function (prediction) { return prediction.is_safe_pick === true; })) return { ok: false, error: "safe_pick_limit" };
     if (upset && sameStageAndWeek.some(function (prediction) { return prediction.is_upset_pick === true; })) return { ok: false, error: "upset_pick_limit" };
 
     const now = new Date();
