@@ -4,6 +4,8 @@
  * sincronizar según el día y la hora en America/Mexico_City.
  */
 
+const NFL_AUTOMATION_CODE_VERSION = "2026.08.14-v3";
+
 /** Instala un único disparador horario y evita duplicados. */
 function installAutomationTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
@@ -116,6 +118,18 @@ function testScheduledSync2026() {
  * completo.
  */
 function testIncrementalSync2026V2() {
+  return runManualIncrementalSync2026_();
+}
+
+/**
+ * Prueba identificada para la revisión de puntuación v3. El nombre único
+ * permite comprobar en el selector que Automation.gs se instaló completo.
+ */
+function testPredictionScoring2026V3() {
+  console.log(JSON.stringify({
+    backendVersion: typeof NFL_BACKEND_CODE_VERSION === "undefined" ? "missing" : NFL_BACKEND_CODE_VERSION,
+    automationVersion: NFL_AUTOMATION_CODE_VERSION,
+  }, null, 2));
   return runManualIncrementalSync2026_();
 }
 
