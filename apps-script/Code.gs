@@ -5,6 +5,8 @@
  * histórica. Todas las validaciones importantes se repiten en el servidor para
  * que no puedan omitirse modificando el frontend.
  */
+const NFL_BACKEND_CODE_VERSION = "2026.08.14-v3";
+
 const APP = Object.freeze({
   spreadsheetId: "145d64hKoIZFIUobAFD-RxmS_F_DB5eO298Tq0YGbKbs",
   season: 2026,
@@ -189,8 +191,14 @@ function savePrediction_(body) {
 
 /** Prueba local que no escribe datos y deja el resultado en el registro. */
 function testBackend() {
-  const result = { ok: true, games: readTable_(APP.sheets.games).records.length, predictions: readTable_(APP.sheets.predictions).records.length };
+  const result = { ok: true, version: NFL_BACKEND_CODE_VERSION, games: readTable_(APP.sheets.games).records.length, predictions: readTable_(APP.sheets.predictions).records.length };
   console.log(JSON.stringify(result, null, 2));
+}
+
+/** Muestra una identificación inequívoca de la revisión instalada. */
+function getNFLBackendVersion2026V3() {
+  console.log(NFL_BACKEND_CODE_VERSION);
+  return NFL_BACKEND_CODE_VERSION;
 }
 
 /**
