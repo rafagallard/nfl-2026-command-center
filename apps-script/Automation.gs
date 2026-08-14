@@ -74,12 +74,14 @@ function updatePredictionResults_() {
     const gameId = String(row[table.headers.indexOf("game_id")]);
     const predictedTeam = String(row[table.headers.indexOf("predicted_winner_team_id")]);
     const game = gamesById[gameId];
-    if (!game || game.status !== "final" || !game.winner_team_id) return;
-    const isCorrect = predictedTeam === String(game.winner_team_id);
-    const newResult = isCorrect ? "correct" : "incorrect";
-    if (row[resultIndex] === newResult && row[correctIndex] === isCorrect) return;
+    if (!game || game.status !== "final") return;
+    const isTie = Number(game.away_score) === Number(game.home_score);
+    const isCorrect = !isTie && predictedTeam === String(game.winner_team_id);
+    const newResult = isTie ? "tie" : isCorrect ? "correct" : "incorrect";
+    const correctValue = isTie ? "" : isCorrect;
+    if (row[resultIndex] === newResult && row[correctIndex] === correctValue) return;
     row[resultIndex] = newResult;
-    row[correctIndex] = isCorrect;
+    row[correctIndex] = correctValue;
     row[updatedAtIndex] = new Date();
     updated += 1;
   });
@@ -104,15 +106,40 @@ function writeSyncLog_(result) {
 
 /** Prueba manual completa que sincroniza, califica y registra el resultado. */
 function testScheduledSync2026() {
+  return runManualIncrementalSync2026_();
+}
+
+/**
+ * Punto de entrada inequívoco para probar la sincronización incremental.
+ * El sufijo V2 evita que una copia antigua de testScheduledSync2026 en otro
+ * archivo del proyecto de Apps Script redirija accidentalmente al calendario
+ * completo.
+ */
+function testIncrementalSync2026V2() {
+  return runManualIncrementalSync2026_();
+}
+
+/** Implementación compartida de la prueba manual incremental. */
+function runManualIncrementalSync2026_() {
   const startedAt = new Date();
-  const scheduleResult = syncRecentGameStatuses2026();
-  const playResult = syncRecentPlayByPlay2026();
-  const result = updatePredictionResults_();
+  const stepErrors = [];
+  let scheduleResult = { gamesRead: 0, gamesUpdated: 0, errors: [] };
+  let playResult = { playsImported: 0, errors: [] };
+  let result = { updated: 0 };
+  try { scheduleResult = syncRecentGameStatuses2026(); } catch (error) { stepErrors.push("marcadores: " + String(error.message || error)); }
+  try { playResult = syncRecentPlayByPlay2026(); } catch (error) { stepErrors.push("jugadas: " + String(error.message || error)); }
+  try { result = updatePredictionResults_(); } catch (error) { stepErrors.push("pronósticos: " + String(error.message || error)); }
+  Array.prototype.push.apply(stepErrors, scheduleResult.errors || []);
+  Array.prototype.push.apply(stepErrors, playResult.errors || []);
   writeSyncLog_({
-    startedAt: startedAt, finishedAt: new Date(), status: "success",
+    startedAt: startedAt, finishedAt: new Date(), status: stepErrors.length ? "partial" : "success",
     recordsRead: scheduleResult.gamesRead,
-    recordsInserted: playResult.playsImported, recordsUpdated: result.updated, errors: 0,
-    message: "Prueba manual completada correctamente.",
+    recordsInserted: playResult.playsImported, recordsUpdated: result.updated, errors: stepErrors.length,
+    message: stepErrors.length ? "Prueba manual parcial: " + stepErrors.join(" | ") : "Prueba manual completada correctamente.",
   });
-  console.log(JSON.stringify({ ok: true, playsImported: playResult.playsImported, predictionsUpdated: result.updated }, null, 2));
+  console.log(JSON.stringify({
+    ok: !stepErrors.length, status: stepErrors.length ? "partial" : "success",
+    gamesUpdated: scheduleResult.gamesUpdated, playsImported: playResult.playsImported,
+    predictionsUpdated: result.updated, errors: stepErrors,
+  }, null, 2));
 }
