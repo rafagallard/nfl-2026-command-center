@@ -73,7 +73,7 @@ function loadPredictions(): Prediction[] {
 async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
   const fallback = slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : [];
   try {
-    const backendResponse = await fetch(`${BACKEND_URL}?action=games&season=2026&seasonType=${encodeURIComponent(slot.phase)}&week=${slot.displayWeek}`);
+    const backendResponse = await fetch(`${BACKEND_URL}?action=games&season=2026&seasonType=${encodeURIComponent(slot.phase)}&week=${slot.displayWeek}&_=${Date.now()}`, { cache: "no-store" });
     if (backendResponse.ok) {
       const backendPayload = await backendResponse.json();
       const backendGames = (backendPayload.games || []).map((game: any): Game => ({
@@ -105,7 +105,7 @@ async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
 
 /** Reads the shared prediction history while preserving an offline cache. */
 async function loadSharedPredictions(): Promise<Prediction[]> {
-  const response = await fetch(`${BACKEND_URL}?action=predictions`);
+  const response = await fetch(`${BACKEND_URL}?action=predictions&_=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error("prediction_history_unavailable");
   const payload = await response.json();
   if (!payload.ok) throw new Error(payload.error || "prediction_history_unavailable");
@@ -122,7 +122,7 @@ async function loadSharedPredictions(): Promise<Prediction[]> {
 
 /** Loads the complete season index used by historical filters. */
 async function loadAllGames(): Promise<Game[]> {
-  const response = await fetch(`${BACKEND_URL}?action=games&season=2026`);
+  const response = await fetch(`${BACKEND_URL}?action=games&season=2026&_=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error("game_history_unavailable");
   const payload = await response.json();
   if (!payload.ok) throw new Error(payload.error || "game_history_unavailable");
@@ -237,14 +237,30 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    setScheduleLoading(true);
-    loadWeekGames(selectedSlot).then((loadedGames) => { if (active) { setGames(loadedGames); setScheduleLoading(false); } });
-    return () => { active = false; };
+    const refreshSchedule = (showLoading = false) => {
+      if (showLoading) setScheduleLoading(true);
+      loadWeekGames(selectedSlot).then((loadedGames) => { if (active) setGames(loadedGames); }).finally(() => { if (active && showLoading) setScheduleLoading(false); });
+    };
+    refreshSchedule(true);
+    const interval = window.setInterval(() => refreshSchedule(), 120000);
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") refreshSchedule(); };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => { active = false; window.clearInterval(interval); document.removeEventListener("visibilitychange", refreshWhenVisible); };
   }, [selectedSlotId]);
   useEffect(() => { localStorage.setItem("nfl-language", language); document.documentElement.lang = language; }, [language]);
   useEffect(() => { localStorage.setItem("nfl-2026-predictions", JSON.stringify(predictions)); }, [predictions]);
-  useEffect(() => { loadSharedPredictions().then(setPredictions).catch(() => undefined); }, []);
-  useEffect(() => { loadAllGames().then(setAllGames).catch(() => undefined); }, []);
+  useEffect(() => {
+    let active = true;
+    const refreshDashboard = () => {
+      loadSharedPredictions().then((value) => { if (active) setPredictions(value); }).catch(() => undefined);
+      loadAllGames().then((value) => { if (active) setAllGames(value); }).catch(() => undefined);
+    };
+    refreshDashboard();
+    const interval = window.setInterval(refreshDashboard, 120000);
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") refreshDashboard(); };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => { active = false; window.clearInterval(interval); document.removeEventListener("visibilitychange", refreshWhenVisible); };
+  }, []);
   useEffect(() => { setFilmLoading(true); loadTeamPlays(filmTeam).then(setFilmPlays).catch(() => setFilmPlays([])).finally(() => setFilmLoading(false)); }, [filmTeam]);
 
   const participantDirectory = useMemo(() => Array.from(predictions.reduce<Map<string, string>>((map, prediction) => {
