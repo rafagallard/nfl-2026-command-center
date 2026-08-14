@@ -17,7 +17,7 @@ interface Prediction {
   upset: boolean;
   submittedAt: string;
   pickHidden?: boolean;
-  result?: "pending" | "correct" | "incorrect";
+  result?: "pending" | "correct" | "incorrect" | "tie";
   isCorrect?: boolean;
 }
 
@@ -319,7 +319,6 @@ export default function App() {
         const errors: Record<string, string> = {
           duplicate_prediction: t.duplicate,
           game_locked: language === "es" ? "El partido ya comenzó; el pronóstico está bloqueado." : "The game has started; predictions are locked.",
-          safe_pick_limit: language === "es" ? "Ya registraste una selección segura para esta semana." : "You already submitted a safe pick for this week.",
           upset_pick_limit: language === "es" ? "Ya registraste una sorpresa para esta semana." : "You already submitted an upset pick for this week.",
           pick_cannot_be_safe_and_upset: language === "es" ? "Un mismo pronóstico no puede ser selección segura y sorpresa." : "A prediction cannot be both a safe pick and an upset.",
           missing_fields: language === "es" ? "Completa el nombre, el partido y el equipo." : "Complete the name, game, and team fields.",
@@ -424,16 +423,19 @@ export default function App() {
 
   function Dashboard() {
     const revealedPredictions = predictions.filter((item) => item.teamId && !item.pickHidden);
-    const settledPredictions = predictions.filter((item) => item.result === "correct" || item.result === "incorrect");
+    const completedPredictions = predictions.filter((item) => item.result === "correct" || item.result === "incorrect" || item.result === "tie");
+    const settledPredictions = completedPredictions.filter((item) => item.result !== "tie");
     const correctPredictions = settledPredictions.filter((item) => item.isCorrect);
     const accuracy = settledPredictions.length ? Math.round((correctPredictions.length / settledPredictions.length) * 100) : null;
     const topTeam = Object.entries(revealedPredictions.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.teamId]: (acc[item.teamId] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1])[0];
     const participantStats = participantDirectory.map((participant) => {
       const entries = predictions.filter((item) => item.participantKey === participant.key);
       const settled = entries.filter((item) => item.result === "correct" || item.result === "incorrect");
+      const completed = entries.filter((item) => item.result === "correct" || item.result === "incorrect" || item.result === "tie");
       const correct = settled.filter((item) => item.isCorrect).length;
-      return { name: participant.name, entries: entries.length, settled: settled.length, correct, accuracy: settled.length ? Math.round((correct / settled.length) * 100) : null };
-    }).sort((left, right) => right.correct - left.correct || (right.accuracy || 0) - (left.accuracy || 0) || left.name.localeCompare(right.name));
+      const points = completed.reduce((total, item) => total + (item.result === "correct" ? 1 + (item.safe ? 1 : 0) : item.result === "incorrect" && item.safe ? -1 : 0), 0);
+      return { name: participant.name, entries: entries.length, settled: completed.length, correct, points, accuracy: settled.length ? Math.round((correct / settled.length) * 100) : null };
+    }).sort((left, right) => right.points - left.points || right.correct - left.correct || (right.accuracy || 0) - (left.accuracy || 0) || left.name.localeCompare(right.name));
     const gameStats = Object.values(settledPredictions.reduce<Record<string, { gameId: string; entries: number; correct: number }>>((acc, item) => {
       const current = acc[item.gameId] || { gameId: item.gameId, entries: 0, correct: 0 };
       current.entries += 1;
@@ -444,13 +446,14 @@ export default function App() {
     const safest = settledPredictions.filter((item) => item.safe);
     const upsets = settledPredictions.filter((item) => item.upset);
     const safeAccuracy = safest.length ? Math.round((safest.filter((item) => item.isCorrect).length / safest.length) * 100) : null;
+    const safeImpact = completedPredictions.reduce((total, item) => total + (!item.safe || item.result === "tie" ? 0 : item.result === "correct" ? 1 : -1), 0);
     const upsetAccuracy = upsets.length ? Math.round((upsets.filter((item) => item.isCorrect).length / upsets.length) * 100) : null;
-    const topGame = gameStats ? games.find((game) => game.id === gameStats.gameId) : undefined;
+    const topGame = gameStats ? allGames.find((game) => game.id === gameStats.gameId) : undefined;
 
     return <div className="page"><PageHeading title="DASHBOARD" subtitle={language === "es" ? "Resultados y participación de la temporada 2026" : "2026 season results and participation"} />
-      <section className="summary-grid"><div><span>{language === "es" ? "Participantes" : "Participants"}</span><strong>{participants.length}</strong><small>{predictions.length} {t.records.toLowerCase()}</small></div><div><span>{language === "es" ? "Partidos evaluados" : "Evaluated picks"}</span><strong>{settledPredictions.length}</strong><small>{correctPredictions.length} {t.correct.toLowerCase()}</small></div><div><span>{t.accuracy}</span><strong>{accuracy === null ? "—" : `${accuracy}%`}</strong><small>{accuracy === null ? (language === "es" ? "Disponible al terminar partidos" : "Available after final games") : `${correctPredictions.length}/${settledPredictions.length}`}</small></div><div><span>{t.popular}</span><strong>{topTeam ? findTeam(topTeam[0]).abbr : "—"}</strong><small>{topTeam ? `${topTeam[1]} ${t.records.toLowerCase()}` : (language === "es" ? "Se revelará al kickoff" : "Revealed at kickoff")}</small></div></section>
-      <div className="dashboard-grid"><section className="panel"><h2>{language === "es" ? "Tabla de participantes" : "Participant standings"}</h2>{participantStats.length ? <div className="leaderboard detailed">{participantStats.map((participant, index) => <div key={participant.name}><span>{index + 1}</span><strong>{participant.name}<small>{participant.correct} {t.correct.toLowerCase()} · {participant.settled} {language === "es" ? "evaluados" : "graded"}</small></strong><div><i style={{ width: `${participant.accuracy || 0}%` }} /></div><b>{participant.accuracy === null ? "—" : `${participant.accuracy}%`}</b></div>)}</div> : <div className="empty-state"><Users size={34} /><p>{t.empty}</p></div>}</section>
-        <section className="panel highlights"><h2>{language === "es" ? "Indicadores especiales" : "Special indicators"}</h2><div><span>★ {t.safe}</span><strong>{safeAccuracy === null ? "—" : `${safeAccuracy}%`}</strong><small>{safest.length} {language === "es" ? "evaluadas" : "graded"}</small></div><div><span>⚡ {t.upset}</span><strong>{upsetAccuracy === null ? "—" : `${upsetAccuracy}%`}</strong><small>{upsets.length} {language === "es" ? "evaluadas" : "graded"}</small></div><div><span>{language === "es" ? "Partido con más aciertos" : "Most correctly picked game"}</span><strong>{topGame ? `${findTeam(topGame.away).abbr}–${findTeam(topGame.home).abbr}` : "—"}</strong><small>{gameStats ? `${gameStats.correct}/${gameStats.entries} ${t.correct.toLowerCase()}` : (language === "es" ? "Pendiente" : "Pending")}</small></div></section></div>
+      <section className="summary-grid"><div><span>{language === "es" ? "Participantes" : "Participants"}</span><strong>{participants.length}</strong><small>{predictions.length} {t.records.toLowerCase()}</small></div><div><span>{language === "es" ? "Pronósticos evaluados" : "Evaluated picks"}</span><strong>{completedPredictions.length}</strong><small>{correctPredictions.length} {t.correct.toLowerCase()}</small></div><div><span>{t.accuracy}</span><strong>{accuracy === null ? "—" : `${accuracy}%`}</strong><small>{accuracy === null ? (language === "es" ? "Disponible al terminar partidos" : "Available after final games") : `${correctPredictions.length}/${settledPredictions.length}`}</small></div><div><span>{t.popular}</span><strong>{topTeam ? findTeam(topTeam[0]).abbr : "—"}</strong><small>{topTeam ? `${topTeam[1]} ${t.records.toLowerCase()}` : (language === "es" ? "Se revelará al kickoff" : "Revealed at kickoff")}</small></div></section>
+      <div className="dashboard-grid"><section className="panel"><h2>{language === "es" ? "Tabla de participantes" : "Participant standings"}</h2>{participantStats.length ? <div className="leaderboard detailed">{participantStats.map((participant, index) => <div key={participant.name}><span>{index + 1}</span><strong>{participant.name}<small>{participant.correct} {t.correct.toLowerCase()} · {participant.settled} {language === "es" ? "evaluados" : "graded"}</small></strong><div><i style={{ width: `${participant.accuracy || 0}%` }} /></div><b>{participant.points} {language === "es" ? "pts" : "pts"}</b></div>)}</div> : <div className="empty-state"><Users size={34} /><p>{t.empty}</p></div>}</section>
+        <section className="panel highlights"><h2>{language === "es" ? "Indicadores especiales" : "Special indicators"}</h2><div><span>★ {t.safe}</span><strong>{safeImpact > 0 ? `+${safeImpact}` : safeImpact}</strong><small>{safeAccuracy === null ? (language === "es" ? "Sin evaluar" : "Not graded") : `${safeAccuracy}% · ${safest.length} ${language === "es" ? "evaluadas" : "graded"}`}</small></div><div><span>⚡ {t.upset}</span><strong>{upsetAccuracy === null ? "—" : `${upsetAccuracy}%`}</strong><small>{upsets.length} {language === "es" ? "evaluadas" : "graded"}</small></div><div><span>{language === "es" ? "Partido con más aciertos" : "Most correctly picked game"}</span><strong>{topGame ? `${findTeam(topGame.away).abbr}–${findTeam(topGame.home).abbr}` : "—"}</strong><small>{gameStats ? `${gameStats.correct}/${gameStats.entries} ${t.correct.toLowerCase()}` : (language === "es" ? "Pendiente" : "Pending")}</small></div></section></div>
       <section><h2>{t.nextGames}</h2><div className="games-grid">{games.slice(0, 3).map((game) => <GameCard key={game.id} game={game} compact />)}</div></section>
     </div>;
   }
