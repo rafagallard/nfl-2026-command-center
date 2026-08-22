@@ -5,7 +5,7 @@
  * histórica. Todas las validaciones importantes se repiten en el servidor para
  * que no puedan omitirse modificando el frontend.
  */
-const NFL_BACKEND_CODE_VERSION = "2026.08.14-v3";
+const NFL_BACKEND_CODE_VERSION = "2026.08.22-v4";
 
 const APP = Object.freeze({
   spreadsheetId: "145d64hKoIZFIUobAFD-RxmS_F_DB5eO298Tq0YGbKbs",
@@ -61,7 +61,7 @@ function doGet(event) {
   try {
     const parameters = (event && event.parameter) || {};
     const action = parameters.action || "health";
-    if (action === "health") return jsonResponse_({ ok: true, service: "nfl-2026-backend", season: APP.season, serverTime: new Date().toISOString() });
+    if (action === "health") return jsonResponse_({ ok: true, service: "nfl-2026-backend", version: NFL_BACKEND_CODE_VERSION, season: APP.season, serverTime: new Date().toISOString() });
     if (action === "games") return jsonResponse_({ ok: true, games: getGames_(parameters) });
     if (action === "predictions") return jsonResponse_({ ok: true, predictions: getPredictions_(parameters) });
     if (action === "plays") return jsonResponse_({ ok: true, plays: getPlays_(parameters) });
@@ -74,6 +74,10 @@ function doGet(event) {
 
 /** Devuelve jugadas enriquecidas con su explicación técnica bilingüe. */
 function getPlays_(parameters) {
+  const teamGameIds = parameters.teamId ? readTable_(APP.sheets.games).records.reduce(function (map, game) {
+    if ([String(game.away_team_id), String(game.home_team_id)].indexOf(String(parameters.teamId)) !== -1) map[String(game.game_id)] = true;
+    return map;
+  }, {}) : null;
   const tags = readTable_("Play_Tags").records.reduce(function (map, tag) {
     map[String(tag.play_id)] = tag;
     return map;
@@ -81,7 +85,7 @@ function getPlays_(parameters) {
   return readTable_("Play_By_Play").records
     .filter(function (play) {
       const gameMatches = !parameters.gameId || String(play.game_id) === String(parameters.gameId);
-      const teamMatches = !parameters.teamId || String(play.possession_team_id) === String(parameters.teamId);
+      const teamMatches = !teamGameIds || teamGameIds[String(play.game_id)] === true;
       const quarterMatches = !parameters.quarter || Number(play.quarter) === Number(parameters.quarter);
       const typeMatches = !parameters.playType || String(play.play_type) === String(parameters.playType);
       return gameMatches && teamMatches && quarterMatches && typeMatches;
@@ -196,7 +200,7 @@ function testBackend() {
 }
 
 /** Muestra una identificación inequívoca de la revisión instalada. */
-function getNFLBackendVersion2026V3() {
+function getNFLBackendVersion2026V4() {
   console.log(NFL_BACKEND_CODE_VERSION);
   return NFL_BACKEND_CODE_VERSION;
 }
