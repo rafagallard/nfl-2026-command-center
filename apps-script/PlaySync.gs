@@ -3,6 +3,8 @@
  * Sólo consulta partidos recientes; las jugadas históricas ya guardadas se conservan.
  */
 
+const NFL_PLAY_SYNC_CODE_VERSION = "2026.08.22-v4";
+
 /** Clasifica una jugada en una categoría estable para filtros y explicaciones. */
 function classifyPlay_(typeText, description) {
   const text = (String(typeText || "") + " " + String(description || "")).toLowerCase();
@@ -52,8 +54,9 @@ function ensureSheetRows_(sheet, requiredRows) {
 
 /** Descarga y transforma todas las jugadas disponibles para un partido. */
 function fetchGamePlays_(game) {
-  const url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=" + game.game_id;
-  const payload = fetchEspnJson_(url, "jugadas del partido " + game.game_id);
+  const response = fetchGameSummary_(game.game_id, "jugadas del partido " + game.game_id);
+  const url = response.sourceUrl;
+  const payload = response.payload;
   const drives = ((payload.drives && payload.drives.previous) || []).slice();
   if (payload.drives && payload.drives.current) drives.push(payload.drives.current);
   const plays = [];
