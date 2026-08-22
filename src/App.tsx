@@ -135,7 +135,7 @@ async function loadAllGames(): Promise<Game[]> {
 
 /** Loads a team's available play-by-play history from the shared backend. */
 async function loadTeamPlays(teamId: string): Promise<PlayRecord[]> {
-  const response = await fetch(`${BACKEND_URL}?action=plays&teamId=${encodeURIComponent(teamId)}`);
+  const response = await fetch(`${BACKEND_URL}?action=plays&teamId=${encodeURIComponent(teamId)}&_=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error("play_history_unavailable");
   const payload = await response.json();
   if (!payload.ok) throw new Error(payload.error || "play_history_unavailable");
@@ -230,6 +230,8 @@ export default function App() {
   const [filmType, setFilmType] = useState("");
   const [filmPlays, setFilmPlays] = useState<PlayRecord[]>([]);
   const [filmLoading, setFilmLoading] = useState(false);
+  const [filmError, setFilmError] = useState("");
+  const [filmRefreshKey, setFilmRefreshKey] = useState(0);
   const [positionFilter, setPositionFilter] = useState<PositionUnitFilter>("all");
   const t = copy[language];
 
@@ -261,7 +263,13 @@ export default function App() {
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => { active = false; window.clearInterval(interval); document.removeEventListener("visibilitychange", refreshWhenVisible); };
   }, []);
-  useEffect(() => { setFilmLoading(true); loadTeamPlays(filmTeam).then(setFilmPlays).catch(() => setFilmPlays([])).finally(() => setFilmLoading(false)); }, [filmTeam]);
+  useEffect(() => {
+    setFilmLoading(true); setFilmError("");
+    loadTeamPlays(filmTeam)
+      .then(setFilmPlays)
+      .catch((error) => { setFilmPlays([]); setFilmError(String(error.message || error)); })
+      .finally(() => setFilmLoading(false));
+  }, [filmTeam, filmRefreshKey]);
 
   const participantDirectory = useMemo(() => Array.from(predictions.reduce<Map<string, string>>((map, prediction) => {
     if (!map.has(prediction.participantKey)) map.set(prediction.participantKey, prediction.participantDisplay);
@@ -478,6 +486,7 @@ export default function App() {
     const playTypes = [...new Set(filmPlays.filter((play) => !latestGame || play.gameId === latestGame.id).map((play) => play.playType))].sort();
     const visiblePlays = filmPlays.filter((play) => (!latestGame || play.gameId === latestGame.id) && (!filmQuarter || play.quarter === Number(filmQuarter)) && (!filmType || play.playType === filmType)).sort((left, right) => left.sequence - right.sequence);
     const typeLabels: Record<string, [string, string]> = { pass: ["Pase", "Pass"], run: ["Carrera", "Run"], sack: ["Captura", "Sack"], interception: ["Intercepción", "Interception"], fumble: ["Balón suelto", "Fumble"], punt: ["Despeje", "Punt"], field_goal: ["Gol de campo", "Field goal"], extra_point: ["Punto extra", "Extra point"], two_point: ["Conversión de dos", "Two-point conversion"], kickoff: ["Patada de salida", "Kickoff"], penalty: ["Castigo", "Penalty"], timeout: ["Tiempo fuera", "Timeout"], kneel: ["Rodilla", "Kneel"], spike: ["Pase clavado", "Spike"], other: ["Otra", "Other"] };
+    if (filmError) return <div className="page"><PageHeading title={t.filmTitle.toUpperCase()} subtitle={language === "es" ? "No fue posible consultar las jugadas" : "The play feed could not be loaded"} /><section className="panel empty-state"><BookOpen size={38} /><h2>{language === "es" ? "Error del servicio de jugadas" : "Play service error"}</h2><p>{filmError}</p><button className="primary" type="button" onClick={() => setFilmRefreshKey((value) => value + 1)}>{language === "es" ? "Reintentar" : "Retry"}</button></section></div>;
     return <div className="page"><PageHeading title={t.filmTitle.toUpperCase()} subtitle={language === "es" ? "Jugadas del último partido de cada equipo, con explicación técnica" : "Every team's latest game plays with technical explanations"} /><section className="film-toolbar panel"><label>{t.team}<select value={filmTeam} onChange={(event) => { setFilmTeam(event.target.value); setFilmQuarter(""); setFilmType(""); }}>{teams.map((team) => <option key={team.id} value={team.id}>{team.abbr} · {team.city} {team.name}</option>)}</select></label><label>{language === "es" ? "Cuarto" : "Quarter"}<select value={filmQuarter} onChange={(event) => setFilmQuarter(event.target.value)}><option value="">{t.all}</option>{[1, 2, 3, 4, 5].map((quarter) => <option key={quarter} value={quarter}>{quarter === 5 ? "OT" : `Q${quarter}`}</option>)}</select></label><label>{language === "es" ? "Tipo de jugada" : "Play type"}<select value={filmType} onChange={(event) => setFilmType(event.target.value)}><option value="">{t.all}</option>{playTypes.map((type) => <option key={type} value={type}>{typeLabels[type]?.[language === "es" ? 0 : 1] || type}</option>)}</select></label></section>{latestGame && <div className="film-game"><TeamBadge id={latestGame.away} /><strong>{findTeam(latestGame.away).abbr} vs {findTeam(latestGame.home).abbr}</strong><TeamBadge id={latestGame.home} /><span>{formatKickoff(latestGame.kickoffUtc)} · {latestGame.venue}</span></div>}{filmLoading ? <div className="empty-state"><BookOpen size={38} /><p>{language === "es" ? "Cargando jugadas…" : "Loading plays…"}</p></div> : visiblePlays.length ? <section className="play-list">{visiblePlays.map((play) => <article className={`${play.scoring ? "scoring" : ""} ${play.turnover ? "turnover" : ""}`} key={play.playId}><div className="play-context"><span>Q{play.quarter} · {play.clock}</span><b>{play.down ? `${play.down}&${play.distance}` : "—"}</b><em>{play.yards > 0 ? `+${play.yards}` : play.yards} YDS</em></div><div className="play-body"><div><span>{typeLabels[play.playType]?.[language === "es" ? 0 : 1] || play.playType}</span>{play.scoring && <b>SCORING</b>}{play.turnover && <b>TURNOVER</b>}</div><h3>{language === "es" ? play.conceptEs : play.conceptEn}</h3><p className="raw-play">{play.descriptionEn}</p><p>{language === "es" ? play.explanationEs : play.explanationEn}</p></div></article>)}</section> : <section className="panel film"><div className="field"><div>20</div><div>40</div><div>50</div><div>40</div><div>20</div><span className="play-line" /></div><div className="empty-state"><BookOpen size={38} /><h2>{language === "es" ? "Esperando el primer kickoff" : "Waiting for the first kickoff"}</h2><p>{t.filmEmpty}</p></div></section>}</div>;
   }
 
