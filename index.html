@@ -6,6 +6,27 @@
     <meta name="theme-color" content="#17395d" />
     <meta name="description" content="Seguimiento bilingüe de la temporada NFL 2026 y pronósticos por ganador." />
     <title>NFL Tracker 2026</title>
+    <style>
+      /* Temporary frontend kill switch: Film Room stays in source/backend but is not exposed to users. */
+      .desktop-nav button:nth-child(6),
+      .mobile-nav button:nth-child(6) {
+        display: none !important;
+      }
+    </style>
+    <script>
+      /* Prevent Film Room from generating backend traffic while the feature is isolated. */
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        const url = typeof input === "string" ? input : input?.url || "";
+        if (url.includes("action=plays")) {
+          return Promise.resolve(new Response(JSON.stringify({ ok: true, plays: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }));
+        }
+        return nativeFetch(input, init);
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>
