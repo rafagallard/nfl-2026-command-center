@@ -159,7 +159,9 @@ function getInitialScheduleSlotId() {
   if (now < boundary("2026-08-24T00:00:00Z")) return "pre-2";
   if (now < boundary("2026-08-31T00:00:00Z")) return "pre-3";
   if (now < boundary("2027-01-12T00:00:00Z")) {
-    // La jornada visible avanza el martes a las 06:00 de Ciudad de México,\n    // después de concluir el Monday Night Football de la semana anterior.\n    const regularWeek = Math.min(18, Math.max(1, Math.floor((now - boundary("2026-09-08T12:00:00Z")) / 604800000) + 1));
+    // La jornada visible avanza el martes a las 06:00 de Ciudad de México,
+    // después de concluir el Monday Night Football de la semana anterior.
+    const regularWeek = Math.min(18, Math.max(1, Math.floor((now - boundary("2026-09-08T12:00:00Z")) / 604800000) + 1));
     return `reg-${regularWeek}`;
   }
   if (now < boundary("2027-01-19T00:00:00Z")) return "post-1";
