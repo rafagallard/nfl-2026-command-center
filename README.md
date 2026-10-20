@@ -1,6 +1,6 @@
 # NFL 2026 Command Center
 
-Bilingual, responsive NFL season tracker based on the approved Figma direction. It includes standings, weekly winner predictions, participant history, dashboards, playoff clusters, a film-room foundation, and a position glossary.
+Bilingual, responsive NFL season tracker based on the approved Figma direction. It includes standings, weekly winner predictions, participant history, dashboards, a week-by-week recap archive, playoff clusters, a film-room foundation, and a position glossary.
 
 ## Local development
 
@@ -28,3 +28,8 @@ The Vite base is relative so the generated `dist/` directory can be served from 
 - Google Sheets is the historical store and operational fallback.
 
 This is a personal-use project and is not affiliated with the NFL.
+
+
+## Weekly recap archive
+
+The **Weekly recap / Resumen semanal** view is generated from the permanent `Games` and `Predictions` records. Each regular-season week remains addressable in the archive and includes confirmed final scores, prediction performance, weekly points, highlights, and a clearly labeled preview of the following week.

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Shield, Target, Trophy, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Newspaper, Shield, Target, Trophy, Users } from "lucide-react";
 import { fallbackGames, findTeam, Game, hallOfFameGame, positionGroups, scheduleSlots, ScheduleSlot, teams } from "./data";
 
 type Language = "es" | "en";
-type View = "home" | "standings" | "predictions" | "dashboard" | "clusters" | "plays" | "positions";
+type View = "home" | "standings" | "predictions" | "dashboard" | "weekly" | "clusters" | "plays" | "positions";
 type PositionUnitFilter = "all" | "offense" | "defense" | "special";
 
 interface Prediction {
@@ -47,17 +47,17 @@ const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxY8aPfp3QaTx21dQtS
 
 const copy = {
   es: {
-    season: "TEMPORADA 2026", home: "Inicio", standings: "Clasificaciones", predictions: "Pronósticos", dashboard: "Dashboard", clusters: "Carrera a playoffs", plays: "Sala de Jugadas", positions: "Posiciones",
+    season: "TEMPORADA 2026", home: "Inicio", standings: "Clasificaciones", predictions: "Pronósticos", dashboard: "Dashboard", weekly: "Resumen semanal", clusters: "Carrera a playoffs", plays: "Sala de Jugadas", positions: "Posiciones",
     title: "NFL 2026 — Semana 1", subtitle: "Calendario, avance y pronósticos de ganador", nextGames: "Próximos partidos", register: "Registrar pronóstico", participant: "Nombre completo", choose: "Elige al ganador", safe: "Selección segura", upset: "Sorpresa de la semana", save: "Guardar pronóstico", history: "Historial", empty: "Todavía no hay pronósticos registrados.", duplicate: "Ya existe un pronóstico para este partido registrado con ese nombre.", saved: "Pronóstico registrado correctamente.", kickoff: "Inicio", final: "Final", scheduled: "Programado", localTime: "Hora local", accuracy: "Efectividad", records: "Registros", correct: "Aciertos", popular: "Equipo más seleccionado", source: "Datos reales 2026 · Actualización automática en preparación", all: "Todos", afc: "AFC", nfc: "NFC", team: "Equipo", conference: "Conferencia", division: "División", record: "Récord", streak: "Racha", filmTitle: "Sala de Jugadas", filmEmpty: "El análisis play-by-play se habilitará después del primer partido de 2026.", anatomy: "Radiografía de posiciones", englishName: "Nombre en inglés", spanishName: "Nombre en español", function: "Función principal", noScore: "Se elige únicamente al ganador; no se pronostican marcadores.", filterMember: "Filtrar por participante", filterGame: "Filtrar por partido", status: "Estado",
   },
   en: {
-    season: "2026 SEASON", home: "Home", standings: "Standings", predictions: "Predictions", dashboard: "Dashboard", clusters: "Playoff Race", plays: "Film Room", positions: "Positions",
+    season: "2026 SEASON", home: "Home", standings: "Standings", predictions: "Predictions", dashboard: "Dashboard", weekly: "Weekly recap", clusters: "Playoff Race", plays: "Film Room", positions: "Positions",
     title: "NFL 2026 — Week 1", subtitle: "Schedule, progress and winner predictions", nextGames: "Upcoming games", register: "Submit a prediction", participant: "Full name", choose: "Pick the winner", safe: "Safe pick", upset: "Upset of the week", save: "Save prediction", history: "History", empty: "No predictions have been submitted yet.", duplicate: "A prediction for this game already exists under that name.", saved: "Prediction submitted successfully.", kickoff: "Kickoff", final: "Final", scheduled: "Scheduled", localTime: "Local time", accuracy: "Accuracy", records: "Entries", correct: "Correct", popular: "Most selected team", source: "Real 2026 data · Automatic updates being prepared", all: "All", afc: "AFC", nfc: "NFC", team: "Team", conference: "Conference", division: "Division", record: "Record", streak: "Streak", filmTitle: "Film Room", filmEmpty: "Play-by-play analysis will be enabled after the first 2026 game.", anatomy: "Position anatomy", englishName: "English name", spanishName: "Spanish name", function: "Primary role", noScore: "Pick the winner only; score predictions are not required.", filterMember: "Filter by participant", filterGame: "Filter by game", status: "Status",
   },
 };
 
 const navItems: Array<{ id: View; icon: typeof Trophy }> = [
-  { id: "home", icon: CalendarDays }, { id: "standings", icon: Trophy }, { id: "predictions", icon: Target }, { id: "dashboard", icon: LayoutDashboard }, { id: "clusters", icon: BarChart3 }, { id: "plays", icon: BookOpen }, { id: "positions", icon: Users },
+  { id: "home", icon: CalendarDays }, { id: "standings", icon: Trophy }, { id: "predictions", icon: Target }, { id: "dashboard", icon: LayoutDashboard }, { id: "weekly", icon: Newspaper }, { id: "clusters", icon: BarChart3 }, { id: "plays", icon: BookOpen }, { id: "positions", icon: Users },
 ];
 
 // Normalization makes duplicate validation insensitive to case, accents, and repeated spaces.
@@ -235,6 +235,7 @@ export default function App() {
   const [filmError, setFilmError] = useState("");
   const [filmRefreshKey, setFilmRefreshKey] = useState(0);
   const [positionFilter, setPositionFilter] = useState<PositionUnitFilter>("all");
+  const [summaryWeek, setSummaryWeek] = useState<number | null>(null);
   const t = copy[language];
 
   const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
@@ -370,7 +371,7 @@ export default function App() {
     return new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso));
   }
 
-  const content = view === "home" ? <Home /> : view === "standings" ? <Standings /> : view === "predictions" ? <Predictions /> : view === "dashboard" ? <Dashboard /> : view === "clusters" ? <Clusters /> : view === "plays" ? <FilmRoom /> : <Positions />;
+  const content = view === "home" ? <Home /> : view === "standings" ? <Standings /> : view === "predictions" ? <Predictions /> : view === "dashboard" ? <Dashboard /> : view === "weekly" ? <WeeklyRecap /> : view === "clusters" ? <Clusters /> : view === "plays" ? <FilmRoom /> : <Positions />;
 
   return <div className="app-shell">
     <header className="topbar">
@@ -466,6 +467,63 @@ export default function App() {
       <div className="dashboard-grid"><section className="panel"><h2>{language === "es" ? "Tabla de participantes" : "Participant standings"}</h2>{participantStats.length ? <div className="leaderboard detailed">{participantStats.map((participant, index) => <div key={participant.name}><span>{index + 1}</span><strong>{participant.name}<small>{participant.correct} {t.correct.toLowerCase()} · {participant.settled} {language === "es" ? "evaluados" : "graded"}</small></strong><div><i style={{ width: `${participant.accuracy || 0}%` }} /></div><b>{participant.points} {language === "es" ? "pts" : "pts"}</b></div>)}</div> : <div className="empty-state"><Users size={34} /><p>{t.empty}</p></div>}</section>
         <section className="panel highlights"><h2>{language === "es" ? "Indicadores especiales" : "Special indicators"}</h2><div><span>★ {t.safe}</span><strong>{safeImpact > 0 ? `+${safeImpact}` : safeImpact}</strong><small>{safeAccuracy === null ? (language === "es" ? "Sin evaluar" : "Not graded") : `${safeAccuracy}% · ${safest.length} ${language === "es" ? "evaluadas" : "graded"}`}</small></div><div><span>⚡ {t.upset}</span><strong>{upsetAccuracy === null ? "—" : `${upsetAccuracy}%`}</strong><small>{upsets.length} {language === "es" ? "evaluadas" : "graded"}</small></div><div><span>{language === "es" ? "Partido con más aciertos" : "Most correctly picked game"}</span><strong>{topGame ? `${findTeam(topGame.away).abbr}–${findTeam(topGame.home).abbr}` : "—"}</strong><small>{gameStats ? `${gameStats.correct}/${gameStats.entries} ${t.correct.toLowerCase()}` : (language === "es" ? "Pendiente" : "Pending")}</small></div></section></div>
       <section><h2>{t.nextGames}</h2><div className="games-grid">{games.slice(0, 3).map((game) => <GameCard key={game.id} game={game} compact />)}</div></section>
+    </div>;
+  }
+
+
+  function WeeklyRecap() {
+    // Build every recap from permanent Games and Predictions rows. The week key
+    // is immutable, so selecting a past week reconstructs the same archive.
+    const regularGames = allGames.filter((game) => phaseForGame(game) === "regular" && game.away !== "tbd" && game.home !== "tbd");
+    const archiveWeeks = [...new Set(regularGames.filter((game) => game.status === "final" || Date.parse(game.kickoffUtc) <= Date.now()).map((game) => game.week))].sort((left, right) => right - left);
+    const activeWeek = summaryWeek && archiveWeeks.includes(summaryWeek) ? summaryWeek : (archiveWeeks[0] || 1);
+    const weekGames = regularGames.filter((game) => game.week === activeWeek).sort((left, right) => Date.parse(left.kickoffUtc) - Date.parse(right.kickoffUtc));
+    const finalGames = weekGames.filter((game) => game.status === "final");
+    const weekGameIds = new Set(weekGames.map((game) => game.id));
+    const weekPredictions = predictions.filter((prediction) => weekGameIds.has(prediction.gameId));
+    const decidedPredictions = weekPredictions.filter((prediction) => prediction.result === "correct" || prediction.result === "incorrect");
+    const correctPredictions = decidedPredictions.filter((prediction) => prediction.result === "correct" || prediction.isCorrect);
+    const weeklyAccuracy = decidedPredictions.length ? Math.round((correctPredictions.length / decidedPredictions.length) * 100) : null;
+    const totalPoints = finalGames.reduce((sum, game) => sum + Number(game.awayScore || 0) + Number(game.homeScore || 0), 0);
+    const highestScoring = [...finalGames].sort((left, right) => (Number(right.awayScore || 0) + Number(right.homeScore || 0)) - (Number(left.awayScore || 0) + Number(left.homeScore || 0)))[0];
+    const widestMargin = [...finalGames].sort((left, right) => Math.abs(Number(right.awayScore || 0) - Number(right.homeScore || 0)) - Math.abs(Number(left.awayScore || 0) - Number(left.homeScore || 0)))[0];
+    const nextWeekGames = regularGames.filter((game) => game.week === activeWeek + 1).sort((left, right) => Date.parse(left.kickoffUtc) - Date.parse(right.kickoffUtc)).slice(0, 4);
+    const leaderMap = weekPredictions.reduce<Map<string, { name: string; entries: number; correct: number; points: number }>>((map, prediction) => {
+      const current = map.get(prediction.participantKey) || { name: prediction.participantDisplay, entries: 0, correct: 0, points: 0 };
+      current.entries += 1;
+      if (prediction.result === "correct" || prediction.isCorrect) { current.correct += 1; current.points += prediction.safe ? 2 : 1; }
+      else if (prediction.result === "incorrect" && prediction.safe) current.points -= 1;
+      map.set(prediction.participantKey, current); return map;
+    }, new Map());
+    const weeklyLeaders = [...leaderMap.values()].sort((left, right) => right.points - left.points || right.correct - left.correct || left.name.localeCompare(right.name)).slice(0, 8);
+    const matchupLabel = (game: Game) => `${findTeam(game.away).abbr} @ ${findTeam(game.home).abbr}`;
+    const resultLabel = (game: Game) => `${findTeam(game.away).abbr} ${Number(game.awayScore || 0)}–${Number(game.homeScore || 0)} ${findTeam(game.home).abbr}`;
+
+    return <div className="page weekly-page">
+      <PageHeading title={language === "es" ? "RESUMEN SEMANAL" : "WEEKLY RECAP"} subtitle={language === "es" ? "Resultados confirmados, desempeño de pronósticos y archivo histórico por semana." : "Confirmed results, prediction performance, and a week-by-week historical archive."} />
+      <section className="weekly-toolbar panel">
+        <div><span className="status-chip confirmed">{language === "es" ? "RESULTADOS CONFIRMADOS" : "CONFIRMED RESULTS"}</span><p>{language === "es" ? "El archivo se genera desde los registros permanentes de partidos y pronósticos." : "The archive is generated from the permanent game and prediction records."}</p></div>
+        <label>{language === "es" ? "Semana del archivo" : "Archive week"}<select value={activeWeek} onChange={(event) => setSummaryWeek(Number(event.target.value))}>{archiveWeeks.length ? archiveWeeks.map((week) => <option key={week} value={week}>{language === "es" ? `Semana ${week}` : `Week ${week}`}</option>) : <option value={1}>{language === "es" ? "Sin semanas concluidas" : "No completed weeks"}</option>}</select></label>
+      </section>
+      <section className="weekly-kpis">
+        <article><span>{language === "es" ? "Partidos finalizados" : "Final games"}</span><strong>{finalGames.length}</strong><small>{weekGames.length} {language === "es" ? "programados" : "scheduled"}</small></article>
+        <article><span>{language === "es" ? "Puntos anotados" : "Points scored"}</span><strong>{totalPoints}</strong><small>{language === "es" ? "marcador combinado" : "combined scoring"}</small></article>
+        <article><span>{language === "es" ? "Pronósticos" : "Predictions"}</span><strong>{weekPredictions.length}</strong><small>{weeklyAccuracy === null ? "—" : `${weeklyAccuracy}% ${language === "es" ? "de acierto" : "accuracy"}`}</small></article>
+      </section>
+      <div className="weekly-layout">
+        <section className="panel weekly-results">
+          <div className="section-title"><div><p className="eyebrow">{language === "es" ? `SEMANA ${activeWeek}` : `WEEK ${activeWeek}`}</p><h2>{language === "es" ? "Marcadores finales" : "Final scores"}</h2></div><span>{finalGames.length}/{weekGames.length}</span></div>
+          {weekGames.length ? <div className="weekly-score-list">{weekGames.map((game) => <article key={game.id}><div><TeamBadge id={game.away} /><span>{findTeam(game.away).city}</span></div><strong>{game.status === "final" ? `${Number(game.awayScore || 0)} – ${Number(game.homeScore || 0)}` : language === "es" ? "Pendiente" : "Pending"}</strong><div><TeamBadge id={game.home} /><span>{findTeam(game.home).city}</span></div></article>)}</div> : <p className="empty-state">{language === "es" ? "Todavía no hay partidos archivados para esta semana." : "No games have been archived for this week yet."}</p>}
+        </section>
+        <aside className="weekly-aside">
+          <section className="panel weekly-highlights"><p className="eyebrow">{language === "es" ? "LO MÁS DESTACADO" : "WEEK HIGHLIGHTS"}</p><div><span>{language === "es" ? "Mayor anotación" : "Highest scoring"}</span><strong>{highestScoring ? resultLabel(highestScoring) : "—"}</strong></div><div><span>{language === "es" ? "Mayor diferencia" : "Widest margin"}</span><strong>{widestMargin ? `${resultLabel(widestMargin)} · ${Math.abs(Number(widestMargin.awayScore || 0) - Number(widestMargin.homeScore || 0))}` : "—"}</strong></div></section>
+          <section className="panel weekly-leaders"><div className="section-title"><div><p className="eyebrow">{language === "es" ? "PRONÓSTICOS" : "PREDICTIONS"}</p><h2>{language === "es" ? "Tabla semanal" : "Weekly table"}</h2></div></div>{weeklyLeaders.length ? weeklyLeaders.map((leader, index) => <div key={leader.name}><span>{index + 1}</span><strong>{leader.name}</strong><small>{leader.correct}/{leader.entries}</small><b>{leader.points} pts</b></div>) : <p className="empty-state">{language === "es" ? "Sin pronósticos para esta semana." : "No predictions for this week."}</p>}</section>
+        </aside>
+      </div>
+      <section className="panel weekly-preview">
+        <div className="section-title"><div><p className="eyebrow">{language === "es" ? "PREVIA · NO ES RESULTADO" : "PREVIEW · NOT A RESULT"}</p><h2>{language === "es" ? `Próxima jornada · Semana ${activeWeek + 1}` : `Next up · Week ${activeWeek + 1}`}</h2></div></div>
+        {nextWeekGames.length ? <div className="preview-grid">{nextWeekGames.map((game) => <article key={game.id}><strong>{matchupLabel(game)}</strong><span>{formatKickoff(game.kickoffUtc)}</span></article>)}</div> : <p className="empty-state">{language === "es" ? "La siguiente jornada todavía no está disponible." : "The next week is not available yet."}</p>}
+      </section>
     </div>;
   }
 
