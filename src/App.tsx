@@ -488,6 +488,22 @@ export default function App() {
     const highestScoring = [...finalGames].sort((left, right) => (Number(right.awayScore || 0) + Number(right.homeScore || 0)) - (Number(left.awayScore || 0) + Number(left.homeScore || 0)))[0];
     const widestMargin = [...finalGames].sort((left, right) => Math.abs(Number(right.awayScore || 0) - Number(right.homeScore || 0)) - Math.abs(Number(left.awayScore || 0) - Number(left.homeScore || 0)))[0];
     const nextWeekGames = regularGames.filter((game) => game.week === activeWeek + 1).sort((left, right) => Date.parse(left.kickoffUtc) - Date.parse(right.kickoffUtc)).slice(0, 4);
+
+    // Freeze conference progress at the selected week so the archive shows
+    // how every team was positioned at that exact point in the season.
+    const snapshotStats = calculateTeamSeasonStats(regularGames.filter((game) => game.week <= activeWeek), "regular");
+    const compareSnapshotTeams = (leftId: string, rightId: string) => snapshotStats[rightId].pct - snapshotStats[leftId].pct
+      || snapshotStats[rightId].diff - snapshotStats[leftId].diff
+      || snapshotStats[rightId].pf - snapshotStats[leftId].pf
+      || findTeam(leftId).city.localeCompare(findTeam(rightId).city);
+    const snapshotConferences = (["AFC", "NFC"] as const).map((conference) => {
+      const conferenceTeams = teams.filter((team) => team.conference === conference);
+      const divisionLeaders = (["East", "North", "South", "West"] as const).map((division) =>
+        conferenceTeams.filter((team) => team.division === division).map((team) => team.id).sort(compareSnapshotTeams)[0]
+      );
+      const remaining = conferenceTeams.map((team) => team.id).filter((teamId) => !divisionLeaders.includes(teamId)).sort(compareSnapshotTeams);
+      return { conference, seeds: [...divisionLeaders.sort(compareSnapshotTeams), ...remaining] };
+    });
     const leaderMap = weekPredictions.reduce<Map<string, { name: string; entries: number; correct: number; points: number }>>((map, prediction) => {
       const current = map.get(prediction.participantKey) || { name: prediction.participantDisplay, entries: 0, correct: 0, points: 0 };
       current.entries += 1;
@@ -520,6 +536,24 @@ export default function App() {
           <section className="panel weekly-leaders"><div className="section-title"><div><p className="eyebrow">{language === "es" ? "PRONÓSTICOS" : "PREDICTIONS"}</p><h2>{language === "es" ? "Tabla semanal" : "Weekly table"}</h2></div></div>{weeklyLeaders.length ? weeklyLeaders.map((leader, index) => <div key={leader.name}><span>{index + 1}</span><strong>{leader.name}</strong><small>{leader.correct}/{leader.entries}</small><b>{leader.points} pts</b></div>) : <p className="empty-state">{language === "es" ? "Sin pronósticos para esta semana." : "No predictions for this week."}</p>}</section>
         </aside>
       </div>
+      <section className="weekly-progress">
+        <div className="section-title"><div><p className="eyebrow">{language === "es" ? `CIERRE DE SEMANA ${activeWeek}` : `END OF WEEK ${activeWeek}`}</p><h2>{language === "es" ? "Avance por conferencia" : "Conference progress"}</h2></div></div>
+        <div className="playoff-legend"><span><i className="leader-dot" />{language === "es" ? "Líder divisional" : "Division leader"}</span><span><i className="wildcard-dot" />Wild Card</span><span><i className="hunt-dot" />{language === "es" ? "En la pelea" : "In the hunt"}</span></div>
+        <div className="playoff-conferences">{snapshotConferences.map(({ conference, seeds }) => <section className="playoff-conference" key={conference}>
+          <div className="section-title"><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2><span>{language === "es" ? `Posición tras la semana ${activeWeek}` : `Position after week ${activeWeek}`}</span></div>
+          <div className="cluster-board"><div className="axis y">POINT DIFFERENTIAL</div><div className="axis x">WIN %</div><div className="quadrant q1">ELITE</div><div className="quadrant q2">IN THE HUNT</div><div className="quadrant q3">DEVELOPING</div><div className="quadrant q4">REBUILDING</div>
+            {seeds.map((teamId, index) => {
+              const value = snapshotStats[teamId];
+              const noGames = value.played === 0;
+              const left = noGames ? 13 + (index % 4) * 24 : 8 + value.pct * 84;
+              const top = noGames ? 18 + Math.floor(index / 4) * 21 : Math.max(8, Math.min(88, 50 - Math.max(-100, Math.min(100, value.diff)) * .38));
+              const status = index < 4 ? "division-leader" : index < 7 ? "wildcard" : index < 10 ? "hunt" : "outside";
+              return <span key={teamId} title={`${findTeam(teamId).city} ${findTeam(teamId).name} · ${value.wins}-${value.losses}-${value.ties} · ${value.diff >= 0 ? "+" : ""}${value.diff}`} className={`cluster-team ${status}`} style={{ left: `${left}%`, top: `${top}%` }}>{findTeam(teamId).abbr}</span>;
+            })}
+          </div>
+        </section>)}</div>
+      </section>
+
       <section className="panel weekly-preview">
         <div className="section-title"><div><p className="eyebrow">{language === "es" ? "PREVIA · NO ES RESULTADO" : "PREVIEW · NOT A RESULT"}</p><h2>{language === "es" ? `Próxima jornada · Semana ${activeWeek + 1}` : `Next up · Week ${activeWeek + 1}`}</h2></div></div>
         {nextWeekGames.length ? <div className="preview-grid">{nextWeekGames.map((game) => <article key={game.id}><strong>{matchupLabel(game)}</strong><span>{formatKickoff(game.kickoffUtc)}</span></article>)}</div> : <p className="empty-state">{language === "es" ? "La siguiente jornada todavía no está disponible." : "The next week is not available yet."}</p>}
