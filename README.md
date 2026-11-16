@@ -42,17 +42,18 @@ Google Sheets records by game ID (or the same matchup and kickoff), retaining
 canonical game IDs so prediction history stays connected. Only games marked
 final affect standings, dashboard pick grading, and weekly recap.
 
-To persist scores when the site is closed, publish the current
-`apps-script/Code.gs` in the existing Google Apps Script project linked to the
-Command Center spreadsheet. In the Apps Script editor, run
-`installNFLScoreTrigger()` **once** and approve the requested permissions.
-This installs a five-minute scheduled `syncSchedule2026` run. Deploy the new
-Apps Script web-app version (maintaining the existing /exec URL) so that the
-frontend can read the updated results. Run `syncSchedule2026()` manually once
-to backfill recent games and inspect its logged counts.
+## Existing production synchronization — do not overwrite
 
-The server writes scores to existing Games rows and grades Predictions rows
-only when ESPN marks a game final. Historical game IDs are not replaced.
-The live page remains useful independently of Apps Script scheduling, but
-historical persistence and background grading require the published backend
-and trigger.
+The Google Sheets **Sync_Log** tab shows an existing ESPN synchronization
+running hourly, updating scores, plays and predictions. The latest inspected
+records (November 15, 2026) report success. The checked-in
+`apps-script/Code.gs` is **not verified to be the same version** as the
+deployed Apps Script project. **Do not replace or redeploy the working script
+with this repository copy** without first exporting and comparing the
+production source: doing so may remove existing play-by-play processing.
+
+The live page polls ESPN every 30 seconds in the browser, and its final scores
+feed the React views immediately. Persistent historical score and prediction
+updates continue to be handled by the *existing* production Apps Script
+synchronization. To increase its frequency, inspect the deployed Apps Script
+project and its triggers before changing any scheduling.
