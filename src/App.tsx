@@ -93,8 +93,9 @@ async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
       const competition = event.competitions?.[0];
       const home = competition?.competitors?.find((item: any) => item.homeAway === "home");
       const away = competition?.competitors?.find((item: any) => item.homeAway === "away");
-      const homeTeam = teams.find((team) => team.abbr === home?.team?.abbreviation);
-      const awayTeam = teams.find((team) => team.abbr === away?.team?.abbreviation);
+      const normalizeAbbr = (value: string | undefined) => ({ WSH: "WAS" }[String(value || "").toUpperCase()] || String(value || "").toUpperCase());
+      const homeTeam = teams.find((team) => team.abbr === normalizeAbbr(home?.team?.abbreviation));
+      const awayTeam = teams.find((team) => team.abbr === normalizeAbbr(away?.team?.abbreviation));
       if (!homeTeam || !awayTeam) return null;
       const state = event.status?.type?.state;
       return { id: String(event.id), week: slot.displayWeek, kickoffUtc: event.date, away: awayTeam.id, home: homeTeam.id, venue: competition?.venue?.fullName || "TBD", status: state === "post" ? "final" : state === "in" ? "live" : "scheduled", awayScore: Number(away.score || 0), homeScore: Number(home.score || 0) };
@@ -113,8 +114,9 @@ async function loadEspnScores(slot: ScheduleSlot): Promise<Game[]> {
     const competition = event.competitions?.[0];
     const home = competition?.competitors?.find((item: any) => item.homeAway === "home");
     const away = competition?.competitors?.find((item: any) => item.homeAway === "away");
-    const homeTeam = teams.find((team) => team.abbr === home?.team?.abbreviation);
-    const awayTeam = teams.find((team) => team.abbr === away?.team?.abbreviation);
+    const normalizeAbbr = (value: string | undefined) => ({ WSH: "WAS" }[String(value || "").toUpperCase()] || String(value || "").toUpperCase());
+    const homeTeam = teams.find((team) => team.abbr === normalizeAbbr(home?.team?.abbreviation));
+    const awayTeam = teams.find((team) => team.abbr === normalizeAbbr(away?.team?.abbreviation));
     if (!homeTeam || !awayTeam) return null;
     const state = event.status?.type?.state;
     return {
