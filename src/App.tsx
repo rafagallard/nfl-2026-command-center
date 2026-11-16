@@ -3,7 +3,7 @@ import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Newspape
 import { fallbackGames, findTeam, Game, hallOfFameGame, positionGroups, scheduleSlots, ScheduleSlot, teams } from "./data";
 
 type Language = "es" | "en";
-type View = "home" | "live" | "standings" | "predictions" | "dashboard" | "weekly" | "clusters" | "plays" | "positions";
+type View = "home" | "live" | "standings" | "predictions" | "dashboard" | "weekly" | "clusters" | "race-bars" | "plays" | "positions";
 type PositionUnitFilter = "all" | "offense" | "defense" | "special";
 
 interface Prediction {
@@ -47,17 +47,17 @@ const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxY8aPfp3QaTx21dQtS
 
 const copy = {
   es: {
-    season: "TEMPORADA 2026", home: "Inicio", live: "En vivo", standings: "Clasificaciones", predictions: "Pronósticos", dashboard: "Dashboard", weekly: "Resumen semanal", clusters: "Carrera a playoffs", plays: "Sala de Jugadas", positions: "Posiciones",
+    season: "TEMPORADA 2026", home: "Inicio", live: "En vivo", standings: "Clasificaciones", predictions: "Pronósticos", dashboard: "Dashboard", weekly: "Resumen semanal", clusters: "Carrera a playoffs", "race-bars": "Barras de clasificación", plays: "Sala de Jugadas", positions: "Posiciones",
     title: "NFL 2026 — Semana 1", subtitle: "Calendario, avance y pronósticos de ganador", nextGames: "Próximos partidos", register: "Registrar pronóstico", participant: "Nombre completo", choose: "Elige al ganador", safe: "Selección segura", upset: "Sorpresa de la semana", save: "Guardar pronóstico", history: "Historial", empty: "Todavía no hay pronósticos registrados.", duplicate: "Ya existe un pronóstico para este partido registrado con ese nombre.", saved: "Pronóstico registrado correctamente.", kickoff: "Inicio", final: "Final", scheduled: "Programado", localTime: "Hora local", accuracy: "Efectividad", records: "Registros", correct: "Aciertos", popular: "Equipo más seleccionado", source: "Datos reales 2026 · Actualización automática en preparación", all: "Todos", afc: "AFC", nfc: "NFC", team: "Equipo", conference: "Conferencia", division: "División", record: "Récord", streak: "Racha", filmTitle: "Sala de Jugadas", filmEmpty: "El análisis play-by-play se habilitará después del primer partido de 2026.", anatomy: "Radiografía de posiciones", englishName: "Nombre en inglés", spanishName: "Nombre en español", function: "Función principal", noScore: "Se elige únicamente al ganador; no se pronostican marcadores.", filterMember: "Filtrar por participante", filterGame: "Filtrar por partido", status: "Estado",
   },
   en: {
-    season: "2026 SEASON", home: "Home", live: "Live scores", standings: "Standings", predictions: "Predictions", dashboard: "Dashboard", weekly: "Weekly recap", clusters: "Playoff Race", plays: "Film Room", positions: "Positions",
+    season: "2026 SEASON", home: "Home", live: "Live scores", standings: "Standings", predictions: "Predictions", dashboard: "Dashboard", weekly: "Weekly recap", clusters: "Playoff Race", "race-bars": "Standings bars", plays: "Film Room", positions: "Positions",
     title: "NFL 2026 — Week 1", subtitle: "Schedule, progress and winner predictions", nextGames: "Upcoming games", register: "Submit a prediction", participant: "Full name", choose: "Pick the winner", safe: "Safe pick", upset: "Upset of the week", save: "Save prediction", history: "History", empty: "No predictions have been submitted yet.", duplicate: "A prediction for this game already exists under that name.", saved: "Prediction submitted successfully.", kickoff: "Kickoff", final: "Final", scheduled: "Scheduled", localTime: "Local time", accuracy: "Accuracy", records: "Entries", correct: "Correct", popular: "Most selected team", source: "Real 2026 data · Automatic updates being prepared", all: "All", afc: "AFC", nfc: "NFC", team: "Team", conference: "Conference", division: "Division", record: "Record", streak: "Streak", filmTitle: "Film Room", filmEmpty: "Play-by-play analysis will be enabled after the first 2026 game.", anatomy: "Position anatomy", englishName: "English name", spanishName: "Spanish name", function: "Primary role", noScore: "Pick the winner only; score predictions are not required.", filterMember: "Filter by participant", filterGame: "Filter by game", status: "Status",
   },
 };
 
 const navItems: Array<{ id: View; icon: typeof Trophy }> = [
-  { id: "home", icon: CalendarDays }, { id: "live", icon: Radio }, { id: "standings", icon: Trophy }, { id: "predictions", icon: Target }, { id: "dashboard", icon: LayoutDashboard }, { id: "weekly", icon: Newspaper }, { id: "clusters", icon: BarChart3 }, { id: "plays", icon: BookOpen }, { id: "positions", icon: Users },
+  { id: "home", icon: CalendarDays }, { id: "live", icon: Radio }, { id: "standings", icon: Trophy }, { id: "predictions", icon: Target }, { id: "dashboard", icon: LayoutDashboard }, { id: "weekly", icon: Newspaper }, { id: "clusters", icon: BarChart3 }, { id: "race-bars", icon: BarChart3 }, { id: "plays", icon: BookOpen }, { id: "positions", icon: Users },
 ];
 
 // Normalization makes duplicate validation insensitive to case, accents, and repeated spaces.
@@ -292,6 +292,7 @@ export default function App() {
   const [teamFilter, setTeamFilter] = useState("");
   const [resultFilter, setResultFilter] = useState("");
   const [standingsPhase, setStandingsPhase] = useState<"preseason" | "regular">("regular");
+  const [raceConference, setRaceConference] = useState<"both" | "AFC" | "NFC">("both");
   const [filmTeam, setFilmTeam] = useState("car");
   const [filmQuarter, setFilmQuarter] = useState("");
   const [filmType, setFilmType] = useState("");
@@ -462,7 +463,7 @@ export default function App() {
     return new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso));
   }
 
-  const content = view === "home" ? <Home /> : view === "live" ? <LiveScores /> : view === "standings" ? <Standings /> : view === "predictions" ? <Predictions /> : view === "dashboard" ? <Dashboard /> : view === "weekly" ? <WeeklyRecap /> : view === "clusters" ? <Clusters /> : view === "plays" ? <FilmRoom /> : <Positions />;
+  const content = view === "home" ? <Home /> : view === "live" ? <LiveScores /> : view === "standings" ? <Standings /> : view === "predictions" ? <Predictions /> : view === "dashboard" ? <Dashboard /> : view === "weekly" ? <WeeklyRecap /> : view === "clusters" ? <Clusters /> : view === "race-bars" ? <RaceBars /> : view === "plays" ? <FilmRoom /> : <Positions />;
 
   return <div className="app-shell">
     <header className="topbar">
@@ -689,6 +690,86 @@ export default function App() {
       return { conference, seeds, gamesPlayed: conferenceTeams.reduce((sum, team) => sum + stats[team.id].played, 0) / 2 };
     });
     return <div className="page"><PageHeading title={language === "es" ? "CARRERA A PLAYOFFS" : "PLAYOFF RACE"} subtitle={language === "es" ? "Posición real por porcentaje y diferencial de puntos" : "Live position by win percentage and point differential"} /><div className="playoff-legend"><span><i className="leader-dot" />{language === "es" ? "Líder divisional" : "Division leader"}</span><span><i className="wildcard-dot" />Wild Card</span><span><i className="hunt-dot" />{language === "es" ? "En la pelea" : "In the hunt"}</span></div><div className="playoff-conferences">{conferenceData.map(({ conference, seeds, gamesPlayed }) => <section className="playoff-conference" key={conference}><div className="section-title"><h2 className={`conference ${conference.toLowerCase()}`}>{conference}</h2><span>{gamesPlayed} {language === "es" ? "partidos finalizados" : "final games"}</span></div><div className="cluster-board"><div className="axis y">POINT DIFFERENTIAL</div><div className="axis x">WIN %</div><div className="quadrant q1">ELITE</div><div className="quadrant q2">IN THE HUNT</div><div className="quadrant q3">DEVELOPING</div><div className="quadrant q4">REBUILDING</div>{seeds.map((teamId, index) => { const value = stats[teamId]; const initial = gamesPlayed === 0; const left = initial ? 13 + (index % 4) * 24 : 8 + value.pct * 84; const top = initial ? 18 + Math.floor(index / 4) * 21 : Math.max(8, Math.min(88, 50 - Math.max(-100, Math.min(100, value.diff)) * .38)); const status = index < 4 ? "division-leader" : index < 7 ? "wildcard" : index < 10 ? "hunt" : "outside"; return <span key={teamId} title={`${findTeam(teamId).city} ${findTeam(teamId).name} · ${(value.pct * 100).toFixed(1)}% · ${value.diff >= 0 ? "+" : ""}${value.diff}`} className={`cluster-team ${status}`} style={{ left: `${left}%`, top: `${top}%` }}>{findTeam(teamId).abbr}</span>; })}</div><div className="seed-list">{seeds.slice(0, 7).map((teamId, index) => { const value = stats[teamId]; return <div key={teamId}><span>{index + 1}</span><TeamBadge id={teamId} /><strong>{findTeam(teamId).city}<small>{value.wins}-{value.losses}-{value.ties} · {(value.pct * 100).toFixed(1)}% · {value.diff >= 0 ? "+" : ""}{value.diff}</small></strong><b>{index < 4 ? (language === "es" ? "DIV" : "DIV") : "WC"}</b></div>; })}</div></section>)}</div></div>;
+  }
+
+
+  /** Alternative league view; the existing playoff quadrant remains untouched. */
+  function RaceBars() {
+    const stats = calculateTeamSeasonStats(allGames, "regular");
+    const [onlyConference, setOnlyConference] = [raceConference, setRaceConference];
+    const byRank = (leftId: string, rightId: string) =>
+      stats[rightId].pct - stats[leftId].pct ||
+      stats[rightId].diff - stats[leftId].diff ||
+      stats[rightId].pf - stats[leftId].pf ||
+      findTeam(leftId).city.localeCompare(findTeam(rightId).city);
+    const conferences = (["AFC", "NFC"] as const).filter((item) => onlyConference === "both" || item === onlyConference);
+    const cards = conferences.map((conference) => {
+      const conferenceTeams = teams.filter((team) => team.conference === conference);
+      const leaders = (["East", "North", "South", "West"] as const).map((division) =>
+        conferenceTeams.filter((team) => team.division === division).map((team) => team.id).sort(byRank)[0]);
+      const rest = conferenceTeams.map((team) => team.id).filter((id) => !leaders.includes(id)).sort(byRank);
+      const ranked = [...leaders.sort(byRank), ...rest];
+      return { conference, ranked, leaders: new Set(leaders), gamesPlayed: conferenceTeams.reduce((sum, team) => sum + stats[team.id].played, 0) / 2 };
+    });
+    const pct = (teamId: string) => Math.round(stats[teamId].pct * 1000) / 10;
+    const label = (index: number, leader: boolean) => {
+      if (leader) return language === "es" ? "Líder divisional" : "Division leader";
+      if (index < 7) return "Wild Card";
+      if (index < 11) return language === "es" ? "En la pelea" : "In the hunt";
+      return language === "es" ? "Rezagado" : "Trailing";
+    };
+    const classification = (index: number, leader: boolean) =>
+      leader ? "rb-leader" : index < 7 ? "rb-wildcard" : index < 11 ? "rb-hunt" : "rb-trailing";
+    return <div className="page race-bars-page">
+      <PageHeading title={language === "es" ? "CLASIFICACIÓN POR CONFERENCIA" : "CONFERENCE STANDINGS BARS"}
+        subtitle={language === "es" ? "Comparación visual AFC y NFC basada en partidos finalizados. El cuadrante original permanece disponible." : "Visual AFC/NFC comparison based on completed games. The original quadrant remains available."} />
+      <section className="rb-toolbar panel">
+        <div role="group" aria-label={language === "es" ? "Filtrar conferencia" : "Conference filter"} className="rb-filters">
+          {(["both", "AFC", "NFC"] as const).map((choice) =>
+            <button key={choice} type="button" onClick={() => setOnlyConference(choice)} aria-pressed={onlyConference === choice} className={onlyConference === choice ? "active" : ""}>
+              {choice === "both" ? (language === "es" ? "Ambas" : "Both") : choice}
+            </button>)}
+        </div>
+        <button type="button" className="rb-quadrant-link" onClick={() => setView("clusters")}>
+          {language === "es" ? "Ver cuadrante original" : "View original quadrant"}
+        </button>
+      </section>
+      <div className="rb-legend" aria-label={language === "es" ? "Leyenda de categorías" : "Category legend"}>
+        <span><i className="rb-leader" />{language === "es" ? "Líder divisional" : "Division leader"}</span>
+        <span><i className="rb-wildcard" />Wild Card</span>
+        <span><i className="rb-hunt" />{language === "es" ? "En la pelea" : "In the hunt"}</span>
+        <span><i className="rb-trailing" />{language === "es" ? "Rezagado" : "Trailing"}</span>
+      </div>
+      <p className="rb-disclaimer">{language === "es"
+        ? "Clasificación orientativa: líderes de división primero; después, equipos por porcentaje de victorias y diferencial de puntos. No aplica todos los criterios oficiales de desempate NFL ni garantiza plazas de playoffs."
+        : "Illustrative standings: division leaders first, then teams ordered by winning percentage and point differential. Not every official NFL tiebreaker is applied; playoff spots are not guaranteed."}</p>
+      <div className={`rb-conferences ${onlyConference !== "both" ? "single" : ""}`}>
+        {cards.map(({ conference, ranked, leaders, gamesPlayed }) =>
+          <section key={conference} className="panel rb-conference">
+            <div className="rb-conference-head"><div><p className="eyebrow">{language === "es" ? "CONFERENCIA" : "CONFERENCE"}</p><h2>{conference}</h2></div><small>{gamesPlayed} {language === "es" ? "partidos finalizados" : "completed games"}</small></div>
+            <div className="rb-scale"><span>{language === "es" ? "Porcentaje de victorias" : "Win percentage"}</span><span>0%</span><span>50%</span><span>100%</span></div>
+            <div className="rb-team-list">{ranked.map((teamId, index) => {
+              const team = findTeam(teamId);
+              const record = stats[teamId];
+              const group = classification(index, leaders.has(teamId));
+              return <article className={`rb-team-row ${group}`} key={teamId}>
+                <span className="rb-rank">{index + 1}</span>
+                <TeamBadge id={teamId} />
+                <div className="rb-team-data">
+                  <div className="rb-team-heading">
+                    <strong>{team.city} {team.name}</strong>
+                    <span>{record.wins}-{record.losses}{record.ties ? `-${record.ties}` : ""} · {pct(teamId).toFixed(1)}%</span>
+                  </div>
+                  <div className="rb-bar-track" role="img" aria-label={`${team.city} ${team.name}: ${pct(teamId).toFixed(1)}% ${language === "es" ? "de victorias" : "win percentage"}`}>
+                    <span className="rb-bar-fill" style={{ width: `${pct(teamId)}%` }} />
+                  </div>
+                  <div className="rb-team-foot"><span>{label(index, leaders.has(teamId))}</span><span>DIFF {record.diff >= 0 ? "+" : ""}{record.diff}</span></div>
+                </div>
+              </article>;
+            })}</div>
+          </section>)}
+      </div>
+    </div>;
   }
 
   function FilmRoom() {
