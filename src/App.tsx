@@ -696,7 +696,8 @@ export default function App() {
   /** Alternative league view; the existing playoff quadrant remains untouched. */
   function RaceBars() {
     const stats = calculateTeamSeasonStats(allGames, "regular");
-    const [onlyConference, setOnlyConference] = [raceConference, setRaceConference];
+    const onlyConference = raceConference;
+    const setOnlyConference = setRaceConference;
     const byRank = (leftId: string, rightId: string) =>
       stats[rightId].pct - stats[leftId].pct ||
       stats[rightId].diff - stats[leftId].diff ||
