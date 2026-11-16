@@ -21,6 +21,9 @@ export interface Game {
   status: "scheduled" | "live" | "final" | "postponed";
   awayScore?: number;
   homeScore?: number;
+  clock?: string;
+  period?: number;
+  statusDetail?: string;
 }
 
 export interface ScheduleSlot {
