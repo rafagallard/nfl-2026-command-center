@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Newspaper, Shield, Target, Trophy, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Newspaper, Radio, Shield, Target, Trophy, Users } from "lucide-react";
 import { fallbackGames, findTeam, Game, hallOfFameGame, positionGroups, scheduleSlots, ScheduleSlot, teams } from "./data";
 
 type Language = "es" | "en";
-type View = "home" | "standings" | "predictions" | "dashboard" | "weekly" | "clusters" | "plays" | "positions";
+type View = "home" | "live" | "standings" | "predictions" | "dashboard" | "weekly" | "clusters" | "plays" | "positions";
 type PositionUnitFilter = "all" | "offense" | "defense" | "special";
 
 interface Prediction {
@@ -47,17 +47,17 @@ const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxY8aPfp3QaTx21dQtS
 
 const copy = {
   es: {
-    season: "TEMPORADA 2026", home: "Inicio", standings: "Clasificaciones", predictions: "Pronósticos", dashboard: "Dashboard", weekly: "Resumen semanal", clusters: "Carrera a playoffs", plays: "Sala de Jugadas", positions: "Posiciones",
+    season: "TEMPORADA 2026", home: "Inicio", live: "En vivo", standings: "Clasificaciones", predictions: "Pronósticos", dashboard: "Dashboard", weekly: "Resumen semanal", clusters: "Carrera a playoffs", plays: "Sala de Jugadas", positions: "Posiciones",
     title: "NFL 2026 — Semana 1", subtitle: "Calendario, avance y pronósticos de ganador", nextGames: "Próximos partidos", register: "Registrar pronóstico", participant: "Nombre completo", choose: "Elige al ganador", safe: "Selección segura", upset: "Sorpresa de la semana", save: "Guardar pronóstico", history: "Historial", empty: "Todavía no hay pronósticos registrados.", duplicate: "Ya existe un pronóstico para este partido registrado con ese nombre.", saved: "Pronóstico registrado correctamente.", kickoff: "Inicio", final: "Final", scheduled: "Programado", localTime: "Hora local", accuracy: "Efectividad", records: "Registros", correct: "Aciertos", popular: "Equipo más seleccionado", source: "Datos reales 2026 · Actualización automática en preparación", all: "Todos", afc: "AFC", nfc: "NFC", team: "Equipo", conference: "Conferencia", division: "División", record: "Récord", streak: "Racha", filmTitle: "Sala de Jugadas", filmEmpty: "El análisis play-by-play se habilitará después del primer partido de 2026.", anatomy: "Radiografía de posiciones", englishName: "Nombre en inglés", spanishName: "Nombre en español", function: "Función principal", noScore: "Se elige únicamente al ganador; no se pronostican marcadores.", filterMember: "Filtrar por participante", filterGame: "Filtrar por partido", status: "Estado",
   },
   en: {
-    season: "2026 SEASON", home: "Home", standings: "Standings", predictions: "Predictions", dashboard: "Dashboard", weekly: "Weekly recap", clusters: "Playoff Race", plays: "Film Room", positions: "Positions",
+    season: "2026 SEASON", home: "Home", live: "Live scores", standings: "Standings", predictions: "Predictions", dashboard: "Dashboard", weekly: "Weekly recap", clusters: "Playoff Race", plays: "Film Room", positions: "Positions",
     title: "NFL 2026 — Week 1", subtitle: "Schedule, progress and winner predictions", nextGames: "Upcoming games", register: "Submit a prediction", participant: "Full name", choose: "Pick the winner", safe: "Safe pick", upset: "Upset of the week", save: "Save prediction", history: "History", empty: "No predictions have been submitted yet.", duplicate: "A prediction for this game already exists under that name.", saved: "Prediction submitted successfully.", kickoff: "Kickoff", final: "Final", scheduled: "Scheduled", localTime: "Local time", accuracy: "Accuracy", records: "Entries", correct: "Correct", popular: "Most selected team", source: "Real 2026 data · Automatic updates being prepared", all: "All", afc: "AFC", nfc: "NFC", team: "Team", conference: "Conference", division: "Division", record: "Record", streak: "Streak", filmTitle: "Film Room", filmEmpty: "Play-by-play analysis will be enabled after the first 2026 game.", anatomy: "Position anatomy", englishName: "English name", spanishName: "Spanish name", function: "Primary role", noScore: "Pick the winner only; score predictions are not required.", filterMember: "Filter by participant", filterGame: "Filter by game", status: "Status",
   },
 };
 
 const navItems: Array<{ id: View; icon: typeof Trophy }> = [
-  { id: "home", icon: CalendarDays }, { id: "standings", icon: Trophy }, { id: "predictions", icon: Target }, { id: "dashboard", icon: LayoutDashboard }, { id: "weekly", icon: Newspaper }, { id: "clusters", icon: BarChart3 }, { id: "plays", icon: BookOpen }, { id: "positions", icon: Users },
+  { id: "home", icon: CalendarDays }, { id: "live", icon: Radio }, { id: "standings", icon: Trophy }, { id: "predictions", icon: Target }, { id: "dashboard", icon: LayoutDashboard }, { id: "weekly", icon: Newspaper }, { id: "clusters", icon: BarChart3 }, { id: "plays", icon: BookOpen }, { id: "positions", icon: Users },
 ];
 
 // Normalization makes duplicate validation insensitive to case, accents, and repeated spaces.
@@ -101,6 +101,66 @@ async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
     }).filter(Boolean);
     return mapped.length ? mapped : fallback;
   } catch { return slot.id === "hof" ? hallOfFameGame : slot.id === "reg-1" ? fallbackGames : []; }
+}
+
+
+/** Fetch current scoreboard independently of the historical Sheets snapshot. */
+async function loadEspnScores(slot: ScheduleSlot): Promise<Game[]> {
+  const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${slot.seasonType}&week=${slot.espnWeek}&dates=2026&_=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("scoreboard_unavailable");
+  const payload = await response.json();
+  return (payload.events || []).map((event: any): Game | null => {
+    const competition = event.competitions?.[0];
+    const home = competition?.competitors?.find((item: any) => item.homeAway === "home");
+    const away = competition?.competitors?.find((item: any) => item.homeAway === "away");
+    const homeTeam = teams.find((team) => team.abbr === home?.team?.abbreviation);
+    const awayTeam = teams.find((team) => team.abbr === away?.team?.abbreviation);
+    if (!homeTeam || !awayTeam) return null;
+    const state = event.status?.type?.state;
+    return {
+      id: String(event.id), week: slot.displayWeek, kickoffUtc: event.date,
+      away: awayTeam.id, home: homeTeam.id, venue: competition?.venue?.fullName || "TBD",
+      status: state === "post" ? "final" : state === "in" ? "live" : "scheduled",
+      awayScore: Number(away.score || 0), homeScore: Number(home.score || 0),
+      clock: event.status?.displayClock || "",
+      period: Number(event.status?.period || 0),
+      statusDetail: event.status?.type?.shortDetail || "",
+    };
+  }).filter((game: Game | null): game is Game => Boolean(game));
+}
+
+/** Match by ESPN ID first; preserve the canonical Sheets ID for predictions. */
+function mergeScoreboards(base: Game[], incoming: Game[]): Game[] {
+  if (!incoming.length) return base;
+  const result = base.map((game) => {
+    const fresh = incoming.find((item) => item.id === game.id || (
+      item.week === game.week && item.home === game.home && item.away === game.away &&
+      Math.abs(Date.parse(item.kickoffUtc) - Date.parse(game.kickoffUtc)) < 86400000
+    ));
+    if (!fresh) return game;
+    // Never demote a confirmed final to scheduled because of a delayed provider response.
+    if (game.status === "final" && fresh.status !== "final") return game;
+    return { ...game, ...fresh, id: game.id };
+  });
+  for (const game of incoming) {
+    const exists = result.some((item) => item.id === game.id || (
+      item.week === game.week && item.home === game.home && item.away === game.away &&
+      Math.abs(Date.parse(item.kickoffUtc) - Date.parse(game.kickoffUtc)) < 86400000
+    ));
+    if (!exists) result.push(game);
+  }
+  return result;
+}
+
+function evaluatePredictions(predictions: Prediction[], games: Game[]): Prediction[] {
+  const byId = new Map(games.map((game) => [game.id, game]));
+  return predictions.map((prediction) => {
+    const game = byId.get(prediction.gameId);
+    if (!game || game.status !== "final" || !prediction.teamId || prediction.pickHidden) return prediction;
+    const winner = game.awayScore === game.homeScore ? "" : (Number(game.awayScore) > Number(game.homeScore) ? game.away : game.home);
+    const result = !winner ? "tie" : prediction.teamId === winner ? "correct" : "incorrect";
+    return { ...prediction, result, isCorrect: result === "correct" };
+  });
 }
 
 /** Reads the shared prediction history while preserving an offline cache. */
@@ -214,8 +274,11 @@ export default function App() {
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem("nfl-language") as Language) || "es");
   const [view, setView] = useState<View>("home");
   const [selectedSlotId, setSelectedSlotId] = useState(getInitialScheduleSlotId);
-  const [games, setGames] = useState<Game[]>(hallOfFameGame);
-  const [allGames, setAllGames] = useState<Game[]>(hallOfFameGame);
+  const [weekGames, setWeekGames] = useState<Game[]>(hallOfFameGame);
+  const [storedGames, setStoredGames] = useState<Game[]>(hallOfFameGame);
+  const [liveWeekGames, setLiveWeekGames] = useState<Game[]>([]);
+  const [scoresError, setScoresError] = useState("");
+  const [scoresUpdatedAt, setScoresUpdatedAt] = useState<number | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [predictions, setPredictions] = useState<Prediction[]>(loadPredictions);
   const [message, setMessage] = useState("");
@@ -226,7 +289,7 @@ export default function App() {
   const [weekFilter, setWeekFilter] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
   const [resultFilter, setResultFilter] = useState("");
-  const [standingsPhase, setStandingsPhase] = useState<"preseason" | "regular">("preseason");
+  const [standingsPhase, setStandingsPhase] = useState<"preseason" | "regular">("regular");
   const [filmTeam, setFilmTeam] = useState("car");
   const [filmQuarter, setFilmQuarter] = useState("");
   const [filmType, setFilmType] = useState("");
@@ -239,12 +302,15 @@ export default function App() {
   const t = copy[language];
 
   const selectedSlot = scheduleSlots.find((slot) => slot.id === selectedSlotId) || scheduleSlots[0];
+  const games = useMemo(() => mergeScoreboards(weekGames, liveWeekGames), [weekGames, liveWeekGames]);
+  const allGames = useMemo(() => mergeScoreboards(storedGames, liveWeekGames), [storedGames, liveWeekGames]);
+  const evaluatedPredictions = useMemo(() => evaluatePredictions(predictions, allGames), [predictions, allGames]);
 
   useEffect(() => {
     let active = true;
     const refreshSchedule = (showLoading = false) => {
       if (showLoading) setScheduleLoading(true);
-      loadWeekGames(selectedSlot).then((loadedGames) => { if (active) setGames(loadedGames); }).finally(() => { if (active && showLoading) setScheduleLoading(false); });
+      loadWeekGames(selectedSlot).then((loadedGames) => { if (active) setWeekGames(loadedGames); }).finally(() => { if (active && showLoading) setScheduleLoading(false); });
     };
     refreshSchedule(true);
     const interval = window.setInterval(() => refreshSchedule(), 120000);
@@ -252,13 +318,36 @@ export default function App() {
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => { active = false; window.clearInterval(interval); document.removeEventListener("visibilitychange", refreshWhenVisible); };
   }, [selectedSlotId]);
+  useEffect(() => {
+    let active = true;
+    setLiveWeekGames([]);
+    setScoresError("");
+    setScoresUpdatedAt(null);
+    const refreshLive = async () => {
+      try {
+        const next = await loadEspnScores(selectedSlot);
+        if (active) {
+          setLiveWeekGames(next);
+          setScoresUpdatedAt(Date.now());
+          setScoresError("");
+        }
+      } catch {
+        if (active) setScoresError(language === "es" ? "No se pudo actualizar ESPN; mostrando los últimos datos disponibles." : "ESPN refresh failed; showing last available data.");
+      }
+    };
+    void refreshLive();
+    const timer = window.setInterval(refreshLive, 30000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshLive(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [selectedSlotId, language]);
   useEffect(() => { localStorage.setItem("nfl-language", language); document.documentElement.lang = language; }, [language]);
   useEffect(() => { localStorage.setItem("nfl-2026-predictions", JSON.stringify(predictions)); }, [predictions]);
   useEffect(() => {
     let active = true;
     const refreshDashboard = () => {
       loadSharedPredictions().then((value) => { if (active) setPredictions(value); }).catch(() => undefined);
-      loadAllGames().then((value) => { if (active) setAllGames(value); }).catch(() => undefined);
+      loadAllGames().then((value) => { if (active) setStoredGames(value); }).catch(() => undefined);
     };
     refreshDashboard();
     const interval = window.setInterval(refreshDashboard, 120000);
@@ -281,7 +370,7 @@ export default function App() {
   const participants = participantDirectory.map((participant) => participant.name);
   const gamePhase = phaseForGame;
   const filteredGameOptions = allGames.filter((game) => (!phaseFilter || gamePhase(game) === phaseFilter) && (!weekFilter || game.week === Number(weekFilter)) && game.away !== "tbd" && game.home !== "tbd");
-  const visibleHistory = predictions.filter((prediction) => {
+  const visibleHistory = evaluatedPredictions.filter((prediction) => {
     const game = allGames.find((item) => item.id === prediction.gameId);
     return (!memberFilter || prediction.participantKey === memberFilter)
       && (!phaseFilter || gamePhase(game) === phaseFilter)
@@ -371,7 +460,7 @@ export default function App() {
     return new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(iso));
   }
 
-  const content = view === "home" ? <Home /> : view === "standings" ? <Standings /> : view === "predictions" ? <Predictions /> : view === "dashboard" ? <Dashboard /> : view === "weekly" ? <WeeklyRecap /> : view === "clusters" ? <Clusters /> : view === "plays" ? <FilmRoom /> : <Positions />;
+  const content = view === "home" ? <Home /> : view === "live" ? <LiveScores /> : view === "standings" ? <Standings /> : view === "predictions" ? <Predictions /> : view === "dashboard" ? <Dashboard /> : view === "weekly" ? <WeeklyRecap /> : view === "clusters" ? <Clusters /> : view === "plays" ? <FilmRoom /> : <Positions />;
 
   return <div className="app-shell">
     <header className="topbar">
@@ -406,6 +495,32 @@ export default function App() {
     </div>;
   }
 
+  function LiveScores() {
+    const live = games.filter((game) => game.status === "live");
+    const final = games.filter((game) => game.status === "final");
+    const upcoming = games.filter((game) => game.status === "scheduled");
+    const scoreCard = (game: Game) => (
+      <article className={`score-card ${game.status}`} key={game.id}>
+        <div className="score-card-top">
+          <strong className={`score-state ${game.status}`}>{game.status === "live" ? (language === "es" ? "● EN VIVO" : "● LIVE") : game.status === "final" ? t.final.toUpperCase() : t.scheduled.toUpperCase()}</strong>
+          <span>{game.statusDetail || (game.status === "scheduled" ? formatKickoff(game.kickoffUtc) : game.status === "live" ? `Q${game.period || "—"} · ${game.clock || "—"}` : t.final)}</span>
+        </div>
+        <div className="score-team"><div><TeamBadge id={game.away}/><strong>{findTeam(game.away).city} {findTeam(game.away).name}</strong></div><b>{game.status === "scheduled" ? "–" : game.awayScore ?? 0}</b></div>
+        <div className="score-team"><div><TeamBadge id={game.home}/><strong>{findTeam(game.home).city} {findTeam(game.home).name}</strong></div><b>{game.status === "scheduled" ? "–" : game.homeScore ?? 0}</b></div>
+        <small>{game.venue}</small>
+      </article>
+    );
+    return <div className="page live-page">
+      <PageHeading title={language === "es" ? "RESULTADOS EN VIVO" : "LIVE SCORES"} subtitle={language === "es" ? "Marcadores ESPN cada 30 segundos. Los partidos finales alimentan las demás secciones." : "ESPN scores refresh every 30 seconds. Final games update the other sections."} />
+      <section className="schedule-toolbar panel"><label>{language === "es" ? "Etapa y semana" : "Stage and week"}<select value={selectedSlotId} onChange={(event) => setSelectedSlotId(event.target.value)}>{scheduleSlots.map((slot) => <option key={slot.id} value={slot.id}>{language === "es" ? slot.labelEs : slot.labelEn}</option>)}</select></label><span role="status">{scoresUpdatedAt ? `${language === "es" ? "Actualizado" : "Updated"}: ${new Date(scoresUpdatedAt).toLocaleTimeString(language === "es" ? "es-MX" : "en-US")}` : language === "es" ? "Conectando con ESPN…" : "Connecting to ESPN…"}</span></section>
+      {scoresError && <p className="score-error" role="alert">{scoresError}</p>}
+      <section className="summary-grid"><div><span>{language === "es" ? "En vivo" : "Live"}</span><strong>{live.length}</strong></div><div><span>{t.final}</span><strong>{final.length}</strong></div><div><span>{language === "es" ? "Por iniciar" : "Upcoming"}</span><strong>{upcoming.length}</strong></div></section>
+      <section><div className="section-title"><h2>{language === "es" ? "En juego" : "In progress"}</h2></div>{live.length ? <div className="score-grid">{live.map(scoreCard)}</div> : <p className="empty-state">{language === "es" ? "No hay partidos en juego en esta jornada." : "No games currently in progress this week."}</p>}</section>
+      <section><div className="section-title"><h2>{language === "es" ? "Finalizados" : "Final scores"}</h2></div>{final.length ? <div className="score-grid">{final.map(scoreCard)}</div> : <p className="empty-state">{language === "es" ? "Todavía no hay resultados finales." : "No final scores yet."}</p>}</section>
+      <section><div className="section-title"><h2>{language === "es" ? "Próximos encuentros" : "Upcoming games"}</h2></div>{upcoming.length ? <div className="score-grid">{upcoming.map(scoreCard)}</div> : <p className="empty-state">{language === "es" ? "No quedan encuentros programados en esta jornada." : "No upcoming games for this week."}</p>}</section>
+    </div>;
+  }
+
   function Standings() {
     const eligibleGames = allGames.filter((game) => game.status === "final" && game.away !== "tbd" && game.home !== "tbd" && (standingsPhase === "preseason" ? ["hall-of-fame", "preseason"].includes(gamePhase(game)) : gamePhase(game) === "regular"));
     const stats = teams.reduce<Record<string, { wins: number; losses: number; ties: number; pf: number; pa: number; results: string[] }>>((acc, team) => {
@@ -434,14 +549,14 @@ export default function App() {
   }
 
   function Dashboard() {
-    const revealedPredictions = predictions.filter((item) => item.teamId && !item.pickHidden);
-    const completedPredictions = predictions.filter((item) => item.result === "correct" || item.result === "incorrect" || item.result === "tie");
+    const revealedPredictions = evaluatedPredictions.filter((item) => item.teamId && !item.pickHidden);
+    const completedPredictions = evaluatedPredictions.filter((item) => item.result === "correct" || item.result === "incorrect" || item.result === "tie");
     const settledPredictions = completedPredictions.filter((item) => item.result !== "tie");
     const correctPredictions = settledPredictions.filter((item) => item.isCorrect);
     const accuracy = settledPredictions.length ? Math.round((correctPredictions.length / settledPredictions.length) * 100) : null;
     const topTeam = Object.entries(revealedPredictions.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.teamId]: (acc[item.teamId] || 0) + 1 }), {})).sort((a, b) => b[1] - a[1])[0];
     const participantStats = participantDirectory.map((participant) => {
-      const entries = predictions.filter((item) => item.participantKey === participant.key);
+      const entries = evaluatedPredictions.filter((item) => item.participantKey === participant.key);
       const settled = entries.filter((item) => item.result === "correct" || item.result === "incorrect");
       const completed = entries.filter((item) => item.result === "correct" || item.result === "incorrect" || item.result === "tie");
       const correct = settled.filter((item) => item.isCorrect).length;
@@ -480,7 +595,7 @@ export default function App() {
     const weekGames = regularGames.filter((game) => game.week === activeWeek).sort((left, right) => Date.parse(left.kickoffUtc) - Date.parse(right.kickoffUtc));
     const finalGames = weekGames.filter((game) => game.status === "final");
     const weekGameIds = new Set(weekGames.map((game) => game.id));
-    const weekPredictions = predictions.filter((prediction) => weekGameIds.has(prediction.gameId));
+    const weekPredictions = evaluatedPredictions.filter((prediction) => weekGameIds.has(prediction.gameId));
     const decidedPredictions = weekPredictions.filter((prediction) => prediction.result === "correct" || prediction.result === "incorrect");
     const correctPredictions = decidedPredictions.filter((prediction) => prediction.result === "correct" || prediction.isCorrect);
     const weeklyAccuracy = decidedPredictions.length ? Math.round((correctPredictions.length / decidedPredictions.length) * 100) : null;
