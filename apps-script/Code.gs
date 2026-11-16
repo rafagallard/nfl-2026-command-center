@@ -206,9 +206,119 @@ function getNFLBackendVersion2026V4() {
 }
 
 /**
- * Punto reservado para la sincronización programada. Se activará cuando
- * conectemos la fuente deportiva y configuremos los disparadores horarios.
+ * Refreshes current NFL scores from ESPN into Sheets and grades newly final
+ * predictions. Safe to run repeatedly: updates in place, never appends games.
+ * Install the time-based trigger with installNFLScoreTrigger() once in Apps Script.
  */
 function syncSchedule2026() {
-  SpreadsheetApp.getUi().alert("La sincronización automática se configurará en la siguiente etapa.");
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { ok: false, error: "sync_locked" };
+  try {
+    const table = readTable_(APP.sheets.games);
+    const predictionTable = readTable_(APP.sheets.predictions);
+    const gameColumns = table.headers.reduce(function (map, key, index) { map[key] = index; return map; }, {});
+    const predictionColumns = predictionTable.headers.reduce(function (map, key, index) { map[key] = index; return map; }, {});
+    const now = new Date();
+    const eligible = table.records.filter(function (game) {
+      const kickoff = new Date(game.kickoff_utc).getTime();
+      return Number(game.season) === APP.season && isFinite(kickoff) &&
+        Math.abs(now.getTime() - kickoff) < 9 * 86400000 &&
+        String(game.status).toLowerCase() !== "final";
+    });
+    const slots = {};
+    eligible.forEach(function (game) {
+      const type = String(game.season_type);
+      const week = Number(game.week);
+      // ESPN preseason: HOF week 1; regular preseason weeks 2-4.
+      const espnWeek = type === "hall-of-fame" ? 1 : type === "preseason" ? week + 1 : week;
+      const espnType = type === "hall-of-fame" || type === "preseason" ? 1 : type === "postseason" ? 3 : 2;
+      slots[espnType + ":" + espnWeek] = { seasonType: espnType, week: espnWeek };
+    });
+    let changedGames = 0;
+    let gradedPicks = 0;
+    const finalById = {};
+    Object.keys(slots).forEach(function (key) {
+      const slot = slots[key];
+      const url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=2026&seasontype=" + slot.seasonType + "&week=" + slot.week;
+      const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (response.getResponseCode() !== 200) throw new Error("ESPN HTTP " + response.getResponseCode());
+      const events = JSON.parse(response.getContentText()).events || [];
+      events.forEach(function (event) {
+        const competition = (event.competitions || [])[0] || {};
+        const competitors = competition.competitors || [];
+        const home = competitors.filter(function (item) { return item.homeAway === "home"; })[0];
+        const away = competitors.filter(function (item) { return item.homeAway === "away"; })[0];
+        if (!home || !away) return;
+        const state = event.status && event.status.type && event.status.type.state;
+        const status = state === "post" ? "final" : state === "in" ? "live" : "scheduled";
+        const rowIndex = table.records.findIndex(function (game) {
+          if (String(game.game_id) === String(event.id)) return true;
+          // Match by participating team and kickoff to preserve historical IDs.
+          const aliases = { "WSH": "was", "JAX": "jax", "LAR": "lar" };
+          const teamKey = function (abbr) { return aliases[String(abbr).toUpperCase()] || String(abbr).toLowerCase(); };
+          const sameTeams = String(game.home_team_id) === teamKey(home.team.abbreviation)
+            && String(game.away_team_id) === teamKey(away.team.abbreviation);
+          const kickoffGap = Math.abs(new Date(game.kickoff_utc).getTime() - new Date(event.date).getTime());
+          return sameTeams && kickoffGap < 86400000;
+        });
+        if (rowIndex < 0) return;
+        const game = table.records[rowIndex];
+        if (String(game.status).toLowerCase() === "final" && status !== "final") return;
+        const patch = {
+          status: status,
+          home_score: Number(home.score || 0),
+          away_score: Number(away.score || 0),
+          updated_at: now
+        };
+        const row = table.rows[rowIndex];
+        let changed = false;
+        Object.keys(patch).forEach(function (field) {
+          if (gameColumns[field] === undefined) return;
+          const index = gameColumns[field];
+          if (String(row[index]) !== String(patch[field])) {
+            row[index] = patch[field];
+            changed = true;
+          }
+        });
+        if (changed) {
+          table.sheet.getRange(rowIndex + 2, 1, 1, row.length).setValues([row]);
+          changedGames += 1;
+        }
+        if (status === "final") {
+          const awayScore = Number(away.score || 0), homeScore = Number(home.score || 0);
+          const winningId = awayScore === homeScore ? "" : awayScore > homeScore ? String(game.away_team_id) : String(game.home_team_id);
+          finalById[String(game.game_id)] = winningId;
+        }
+      });
+    });
+    predictionTable.records.forEach(function (prediction, index) {
+      const id = String(prediction.game_id);
+      if (!Object.prototype.hasOwnProperty.call(finalById, id)) return;
+      const winner = finalById[id];
+      const predicted = String(prediction.predicted_winner_team_id || "");
+      const result = !winner ? "tie" : predicted === winner ? "correct" : "incorrect";
+      const row = predictionTable.rows[index];
+      if (String(prediction.prediction_result) === result && prediction.is_correct === (result === "correct")) return;
+      const patch = { prediction_result: result, is_correct: result === "correct", updated_at: now };
+      Object.keys(patch).forEach(function (field) {
+        if (predictionColumns[field] !== undefined) row[predictionColumns[field]] = patch[field];
+      });
+      predictionTable.sheet.getRange(index + 2, 1, 1, row.length).setValues([row]);
+      gradedPicks += 1;
+    });
+    const result = { ok: true, changedGames: changedGames, gradedPicks: gradedPicks, scannedSlots: Object.keys(slots).length };
+    console.log(JSON.stringify(result));
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Run once from the Apps Script editor to enable five-minute server updates. */
+function installNFLScoreTrigger() {
+  ScriptApp.getProjectTriggers().filter(function (trigger) {
+    return trigger.getHandlerFunction() === "syncSchedule2026";
+  }).forEach(ScriptApp.deleteTrigger);
+  ScriptApp.newTrigger("syncSchedule2026").timeBased().everyMinutes(5).create();
+  return { ok: true, message: "NFL score synchronization runs every 5 minutes." };
 }
