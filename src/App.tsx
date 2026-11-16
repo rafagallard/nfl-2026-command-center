@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, BookOpen, CalendarDays, Languages, LayoutDashboard, Newspaper, Radio, Shield, Target, Trophy, Users } from "lucide-react";
 import { fallbackGames, findTeam, Game, hallOfFameGame, positionGroups, scheduleSlots, ScheduleSlot, teams } from "./data";
+import { rankConference } from "./tiebreakers";
 
 type Language = "es" | "en";
 type View = "home" | "live" | "standings" | "predictions" | "dashboard" | "weekly" | "clusters" | "race-bars" | "plays" | "positions";
@@ -698,19 +699,11 @@ export default function App() {
     const stats = calculateTeamSeasonStats(allGames, "regular");
     const onlyConference = raceConference;
     const setOnlyConference = setRaceConference;
-    const byRank = (leftId: string, rightId: string) =>
-      stats[rightId].pct - stats[leftId].pct ||
-      stats[rightId].diff - stats[leftId].diff ||
-      stats[rightId].pf - stats[leftId].pf ||
-      findTeam(leftId).city.localeCompare(findTeam(rightId).city);
     const conferences = (["AFC", "NFC"] as const).filter((item) => onlyConference === "both" || item === onlyConference);
     const cards = conferences.map((conference) => {
+      const { ranked, leaders, criterionByTeam } = rankConference(teams, allGames, conference);
       const conferenceTeams = teams.filter((team) => team.conference === conference);
-      const leaders = (["East", "North", "South", "West"] as const).map((division) =>
-        conferenceTeams.filter((team) => team.division === division).map((team) => team.id).sort(byRank)[0]);
-      const rest = conferenceTeams.map((team) => team.id).filter((id) => !leaders.includes(id)).sort(byRank);
-      const ranked = [...leaders.sort(byRank), ...rest];
-      return { conference, ranked, leaders: new Set(leaders), gamesPlayed: conferenceTeams.reduce((sum, team) => sum + stats[team.id].played, 0) / 2 };
+      return { conference, ranked, leaders, criterionByTeam, gamesPlayed: conferenceTeams.reduce((sum, team) => sum + stats[team.id].played, 0) / 2 };
     });
     const pct = (teamId: string) => Math.round(stats[teamId].pct * 1000) / 10;
     const label = (index: number, leader: boolean) => {
@@ -742,10 +735,10 @@ export default function App() {
         <span><i className="rb-trailing" />{language === "es" ? "Rezagado" : "Trailing"}</span>
       </div>
       <p className="rb-disclaimer">{language === "es"
-        ? "Clasificación orientativa: líderes de división primero; después, equipos por porcentaje de victorias y diferencial de puntos. No aplica todos los criterios oficiales de desempate NFL ni garantiza plazas de playoffs."
-        : "Illustrative standings: division leaders first, then teams ordered by winning percentage and point differential. Not every official NFL tiebreaker is applied; playoff spots are not guaranteed."}</p>
+        ? "Orden provisional con desempates NFL: duelos directos, división, rivales comunes, conferencia y criterios adicionales. No equivale a una clasificación oficial ni incluye todos los desempates finales."
+        : "Provisional NFL-style order using head-to-head, division, common-opponent, conference and later criteria. Not an official NFL standing or exhaustive final tiebreaker."}</p>
       <div className={`rb-conferences ${onlyConference !== "both" ? "single" : ""}`}>
-        {cards.map(({ conference, ranked, leaders, gamesPlayed }) =>
+        {cards.map(({ conference, ranked, leaders, criterionByTeam, gamesPlayed }) =>
           <section key={conference} className="panel rb-conference">
             <div className="rb-conference-head"><div><p className="eyebrow">{language === "es" ? "CONFERENCIA" : "CONFERENCE"}</p><h2>{conference}</h2></div><small>{gamesPlayed} {language === "es" ? "partidos finalizados" : "completed games"}</small></div>
             <div className="rb-scale"><span>{language === "es" ? "Porcentaje de victorias" : "Win percentage"}</span><span>0%</span><span>50%</span><span>100%</span></div>
@@ -764,7 +757,7 @@ export default function App() {
                   <div className="rb-bar-track" role="img" aria-label={`${team.city} ${team.name}: ${pct(teamId).toFixed(1)}% ${language === "es" ? "de victorias" : "win percentage"}`}>
                     <span className="rb-bar-fill" style={{ width: `${pct(teamId)}%` }} />
                   </div>
-                  <div className="rb-team-foot"><span>{label(index, leaders.has(teamId))}</span><span>DIFF {record.diff >= 0 ? "+" : ""}{record.diff}</span></div>
+                  <div className="rb-team-foot"><span>{label(index, leaders.has(teamId))}{criterionByTeam[teamId] ? ` · ${language === "es" ? "Desempate" : "Tiebreak"}: ${criterionByTeam[teamId]}` : ""}</span><span>DIFF {record.diff >= 0 ? "+" : ""}{record.diff}</span></div>
                 </div>
               </article>;
             })}</div>
