@@ -185,7 +185,8 @@ export function rankConference(teams: Team[], allGames: Game[], conference: Conf
     return sorted;
   };
   const divisionRanked = divisions.map((division) =>
-    rank(conferenceTeams.filter((team) => team.division === division).map((team) => team.id), "division"));
+    rank(conferenceTeams.filter((team) => team.division === division).map((team) => team.id), "division"))
+    .filter((ranking) => ranking.length > 0);
   const leaders = new Set(divisionRanked.map((ids) => ids[0]));
   const divisionOrder: Record<string, number> = {};
   divisionRanked.forEach((ids) => ids.forEach((id, index) => { divisionOrder[id] = index; }));
