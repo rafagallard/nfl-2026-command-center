@@ -93,7 +93,7 @@ async function loadWeekGames(slot: ScheduleSlot): Promise<Game[]> {
       const competition = event.competitions?.[0];
       const home = competition?.competitors?.find((item: any) => item.homeAway === "home");
       const away = competition?.competitors?.find((item: any) => item.homeAway === "away");
-      const normalizeAbbr = (value: string | undefined) => ({ WSH: "WAS" }[String(value || "").toUpperCase()] || String(value || "").toUpperCase());
+      const normalizeAbbr = (value: string | undefined) => (String(value || "").toUpperCase() === "WSH" ? "WAS" : String(value || "").toUpperCase());
       const homeTeam = teams.find((team) => team.abbr === normalizeAbbr(home?.team?.abbreviation));
       const awayTeam = teams.find((team) => team.abbr === normalizeAbbr(away?.team?.abbreviation));
       if (!homeTeam || !awayTeam) return null;
@@ -114,7 +114,7 @@ async function loadEspnScores(slot: ScheduleSlot): Promise<Game[]> {
     const competition = event.competitions?.[0];
     const home = competition?.competitors?.find((item: any) => item.homeAway === "home");
     const away = competition?.competitors?.find((item: any) => item.homeAway === "away");
-    const normalizeAbbr = (value: string | undefined) => ({ WSH: "WAS" }[String(value || "").toUpperCase()] || String(value || "").toUpperCase());
+    const normalizeAbbr = (value: string | undefined) => (String(value || "").toUpperCase() === "WSH" ? "WAS" : String(value || "").toUpperCase());
     const homeTeam = teams.find((team) => team.abbr === normalizeAbbr(home?.team?.abbreviation));
     const awayTeam = teams.find((team) => team.abbr === normalizeAbbr(away?.team?.abbreviation));
     if (!homeTeam || !awayTeam) return null;
