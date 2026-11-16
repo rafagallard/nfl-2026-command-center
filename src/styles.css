@@ -196,3 +196,19 @@ footer small { display: block; margin-top: 7px; color: #91a5b5; font: 500 8px IB
 .empty-state { color: var(--muted); font-size: 12px; line-height: 1.5; }
 @media (max-width: 900px) { .weekly-layout { grid-template-columns: 1fr; }.preview-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px) { .weekly-toolbar { align-items: stretch; flex-direction: column; }.weekly-toolbar label { min-width: 0; }.weekly-kpis { grid-template-columns: 1fr; }.weekly-kpis article { min-height: 92px; }.preview-grid { grid-template-columns: 1fr; }.weekly-score-list article { grid-template-columns: 1fr auto 1fr; gap: 7px; }.weekly-score-list article > div span { display: none; } }
+
+/* Live scoreboard: independent streaming state, shared visual language. */
+.live-page { display: grid; gap: 22px; }
+.score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 14px; }
+.score-card { display: grid; gap: 12px; padding: 18px; background: white; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.score-card.live { border-left: 4px solid #b42318; }
+.score-card.final { border-left: 4px solid #16805d; }
+.score-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font: 600 11px IBM Plex Mono; color: var(--muted); }
+.score-state.live { color: #b42318; }
+.score-state.final { color: #16805d; }
+.score-team { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--navy); }
+.score-team > div { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; }
+.score-team > div > strong { overflow-wrap: anywhere; }
+.score-team > b { font: 700 28px Barlow Condensed; font-variant-numeric: tabular-nums; }
+.score-card > small { color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); padding-top: 10px; }
+.score-error { padding: 12px 16px; border: 1px solid #cf9c4e; border-radius: 10px; font-size: 12px; }
